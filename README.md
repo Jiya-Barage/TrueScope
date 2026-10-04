@@ -14,7 +14,7 @@ Our goal is to make carbon reporting **faster, more accessible, and affordable f
 |---|---|
 | **Jiya Barage** | 🎨 Frontend |
 | **Nikhil Bhandarkawathekar** | ⚙️ Backend & Orchestration |
-| **Shivvani Bankar** | 🤖 OCR + AI / Classification |
+| **Shivani Bankar** | 🤖 OCR + AI / Classification |
 | **Aditya Baviskar** | 🌱 Emission Engine & Validation |
 
 ---
