@@ -1,0 +1,124 @@
+/* TrueScope Design System & CSS Reset */
+:root {
+  /* Sustainability Tech Color Palette */
+  --primary-forest: #14382c;
+  --primary-forest-dark: #0e271f;
+  --primary-forest-hover: #1b493a;
+  --primary-forest-light: #265e4b;
+
+  --sage-accent: #3d6e5a;
+  --sage-muted: #5e7c70;
+  --sage-light: #8da499;
+  --sage-pale: #e4ebe6;
+  --sage-bg: #edf3ee;
+
+  --bg-app: #f5f7f5;
+  --bg-card: #ffffff;
+  --bg-subtle: #fafbfa;
+  --bg-hover: #f1f5f2;
+
+  --border-color: #e2e8e3;
+  --border-light: #ebf0ec;
+  --border-dark: #cbd5ce;
+
+  --text-primary: #18231d;
+  --text-secondary: #516258;
+  --text-muted: #7c8e84;
+  --text-inverse: #ffffff;
+
+  /* Scopes */
+  --scope1-color: #c25e00;
+  --scope1-bg: #fff8ed;
+  --scope1-border: #fed7aa;
+
+  --scope2-color: #0369a1;
+  --scope2-bg: #f0f9ff;
+  --scope2-border: #bae6fd;
+
+  --scope3-color: #6d28d9;
+  --scope3-bg: #f5f3ff;
+  --scope3-border: #ddd6fe;
+
+  /* Confidence & Status */
+  --conf-high-color: #166534;
+  --conf-high-bg: #f0fdf4;
+  --conf-high-border: #bbf7d0;
+
+  --conf-med-color: #9a3412;
+  --conf-med-bg: #fff7ed;
+  --conf-med-border: #ffedd5;
+
+  --conf-low-color: #991b1b;
+  --conf-low-bg: #fef2f2;
+  --conf-low-border: #fecaca;
+
+  /* Shadows & Radius */
+  --shadow-sm: 0 1px 2px rgba(20, 56, 44, 0.04);
+  --shadow-card: 0 1px 3px rgba(20, 56, 44, 0.05), 0 4px 10px rgba(20, 56, 44, 0.03);
+  --shadow-lg: 0 12px 30px -8px rgba(20, 56, 44, 0.15);
+  --shadow-modal: 0 20px 45px -10px rgba(14, 39, 31, 0.25);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  /* Fonts */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Scrollbar aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-dark);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sage-muted);
+}
