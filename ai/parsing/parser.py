@@ -10,7 +10,25 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# Standard unit normalization mapping
+# Standard unit normalization mapping and aliases
+UNIT_ALIASES = {
+    "lr": "litre",
+    "ltr": "litre",
+    "ltrs": "litre",
+    "litre": "litre",
+    "litres": "litre",
+    "liter": "litre",
+    "liters": "litre",
+    "kwh": "kWh",
+    "mwh": "MWh",
+    "nos": "nos",
+    "nos.": "nos",
+    "no": "nos",
+    "month": "Month",
+    "trip": "Trip",
+    "km": "km",
+}
+
 KNOWN_UNITS = {
     "l": "litres",
     "litre": "litres",
@@ -38,6 +56,9 @@ KNOWN_UNITS = {
     "tons": "tonnes",
     "unit": "units",
     "units": "units",
+    "nos": "nos",
+    "month": "Month",
+    "trip": "Trip",
 }
 
 CURRENCY_SYMBOLS = {
@@ -73,7 +94,10 @@ IGNORE_HEADER_KEYWORDS = [
 
 
 def extract_vendor(lines: List[str]) -> Optional[str]:
-    """Extract vendor name from the first non-empty, non-generic header line.
+    """Extract vendor name from lines.
+
+    Finds first non-empty line that is not purely 'TAX INVOICE', removes trailing
+    'TAX INVOICE' if on same line, and leniently normalizes OCR'd 'Mis'/'M/s' prefix.
 
     Args:
         lines: List of text lines.
@@ -81,18 +105,22 @@ def extract_vendor(lines: List[str]) -> Optional[str]:
     Returns:
         Vendor name string or None if unidentifiable.
     """
-    generic_words = {"invoice", "tax invoice", "receipt", "bill", "statement"}
-    for raw_line in lines[:5]:
+    for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
-        cleaned = re.sub(r"[^\w\s]", "", line).strip().lower()
-        if cleaned in generic_words:
+        # Remove trailing "TAX INVOICE" or document header if on same line
+        v = re.sub(r"\s+tax\s+invoice\s*$", "", line, flags=re.IGNORECASE).strip()
+        cleaned_lower = re.sub(r"[^\w\s]", "", v).strip().lower()
+        if not cleaned_lower or cleaned_lower in {"tax invoice", "invoice", "receipt", "bill", "statement"}:
             continue
-        # Skip if line looks like an invoice label, date, or metadata
-        if re.match(r"^(invoice|date|bill to|ship to|to|from|currency)\b", cleaned):
+        # Leniently normalize OCR'd "Mis", "M/s", "Ms" prefix
+        v = re.sub(r"^(?:m/s|mis|ms|m\s*/\s*s|m\.\s*s\.?)\s+", "", v, flags=re.IGNORECASE).strip()
+        # Skip if line looks like an invoice label or metadata
+        if re.match(r"^(?:invoice|date|bill to|ship to|to|from|currency)\b", v, re.IGNORECASE):
             continue
-        return line
+        if len(v) >= 2:
+            return v
     return None
 
 
@@ -185,42 +213,120 @@ def extract_currency(text: str) -> Optional[str]:
     return None
 
 
+def _clean_num(val: str) -> Optional[float]:
+    """Clean number string by stripping thousands commas and trailing dots."""
+    cleaned = val.strip().rstrip(".").replace(",", "")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _parse_table_line(line: str) -> Optional[Dict[str, Any]]:
+    """Parse a tabular invoice line with tolerant regex into items.
+
+    Rules:
+      amount = last number on the line
+      rate = number before amount (if present)
+      unit = token before rate
+      quantity = number before unit
+      description = everything before quantity
+
+    Args:
+        line: Raw text line.
+
+    Returns:
+        Parsed line item dict or None if line does not match.
+    """
+    num_re = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\.?"
+    
+    # 5 columns: desc, qty, unit, rate, amount
+    pattern_5col = re.compile(
+        rf"^(?P<desc>.+?)\s+(?P<qty>{num_re})\s+(?P<unit>[^\s0-9]+)\s+(?P<rate>{num_re})\s+(?P<amount>{num_re})\s*$"
+    )
+    # 4 columns: desc, qty, unit, amount (fallback when rate column is absent)
+    pattern_4col = re.compile(
+        rf"^(?P<desc>.+?)\s+(?P<qty>{num_re})\s+(?P<unit>[^\s0-9]+)\s+(?P<amount>{num_re})\s*$"
+    )
+
+    stripped = line.strip()
+    m5 = pattern_5col.match(stripped)
+    if m5:
+        d = m5.groupdict()
+        qty = _clean_num(d["qty"])
+        rate = _clean_num(d["rate"])
+        amount = _clean_num(d["amount"])
+        raw_unit = d["unit"]
+        unit = UNIT_ALIASES.get(raw_unit.lower().strip("."), raw_unit)
+        desc = d["desc"].strip()
+
+        reasons = []
+        if qty is not None and rate is not None and amount is not None and amount > 0:
+            diff = abs(qty * rate - amount)
+            if (diff / amount) > 0.02:
+                reasons.append("qty x rate does not match amount")
+
+        return {
+            "description": desc,
+            "quantity": qty,
+            "unit": unit,
+            "rate": rate,
+            "amount": amount,
+            "reasons": reasons,
+        }
+
+    m4 = pattern_4col.match(stripped)
+    if m4:
+        d = m4.groupdict()
+        qty = _clean_num(d["qty"])
+        amount = _clean_num(d["amount"])
+        raw_unit = d["unit"]
+        unit = UNIT_ALIASES.get(raw_unit.lower().strip("."), raw_unit)
+        desc = d["desc"].strip()
+
+        return {
+            "description": desc,
+            "quantity": qty,
+            "unit": unit,
+            "rate": None,
+            "amount": amount,
+            "reasons": [],
+        }
+
+    return None
+
+
 def _parse_line_item(
     line: str,
     vendor: Optional[str] = None,
     invoice_number: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Parse a single text line into description, quantity, unit, and amount.
+    """Fallback line item parser for non-tabular invoices.
 
     Args:
         line: Single text line.
-        vendor: Detected vendor to avoid classifying vendor header as an item.
+        vendor: Detected vendor.
         invoice_number: Detected invoice number.
 
     Returns:
-        Line item dictionary or None if line is not an item.
+        Line item dictionary or None.
     """
     stripped = line.strip()
     if not stripped or len(stripped) < 4:
         return None
 
-    # Exclude vendor line or exact invoice number lines
     if vendor and stripped.lower() == vendor.lower():
         return None
     if invoice_number and invoice_number.lower() in stripped.lower():
         return None
 
     lower_line = stripped.lower()
-    # Skip common headers and total lines
     if any(lower_line.startswith(kw) for kw in IGNORE_HEADER_KEYWORDS):
         return None
 
-    # Skip table header lines like "Description Quantity Unit Amount"
     if "description" in lower_line and ("amount" in lower_line or "quantity" in lower_line or "price" in lower_line):
         return None
 
-    # Check for monetary amount at or near the end of line
-    # Examples: 1,875.00, £1875.00, 750.50
     amount_match = re.search(r"[$£€₹]?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})|[0-9]+(?:\.[0-9]{1,2}))\s*$", stripped)
     amount: Optional[float] = None
     remaining_text = stripped
@@ -233,8 +339,6 @@ def _parse_line_item(
         except ValueError:
             amount = None
 
-    # Find quantity and unit
-    # Examples: "1250 litres", "450 kWh", "500.5 L"
     unit_regex = r"\b(" + "|".join(re.escape(k) for k in KNOWN_UNITS.keys()) + r")\b"
     qty_unit_pattern = rf"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*({unit_regex})"
 
@@ -247,8 +351,7 @@ def _parse_line_item(
         raw_u = qty_unit_match.group(2).lower()
         try:
             quantity = float(raw_qty)
-            unit = KNOWN_UNITS.get(raw_u, raw_u)
-            # Remove qty & unit from description
+            unit = UNIT_ALIASES.get(raw_u, KNOWN_UNITS.get(raw_u, raw_u))
             desc_part1 = remaining_text[: qty_unit_match.start()].strip()
             desc_part2 = remaining_text[qty_unit_match.end() :].strip()
             description = f"{desc_part1} {desc_part2}".strip()
@@ -257,15 +360,12 @@ def _parse_line_item(
     else:
         description = remaining_text
 
-    # Clean description
     description = re.sub(r"^[^\w]+", "", description)
     description = re.sub(r"\s+", " ", description).strip()
 
-    # A valid line item must have either an amount or a quantity/unit
     if amount is None and quantity is None:
         return None
 
-    # If description is too short or empty, reject
     if not description or len(description) < 3:
         return None
 
@@ -273,7 +373,9 @@ def _parse_line_item(
         "description": description,
         "quantity": quantity,
         "unit": unit,
+        "rate": None,
         "amount": amount,
+        "reasons": [],
     }
 
 
@@ -283,7 +385,7 @@ def parse(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
     Never fabricates values; returns None for fields that cannot be extracted.
 
     Args:
-        ocr_result: Dictionary containing 'text', 'words', 'pages'.
+        ocr_result: Dictionary containing 'text', 'lines', 'words', 'pages'.
 
     Returns:
         Dictionary containing:
@@ -292,20 +394,60 @@ def parse(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
             - "invoice_number": str or None
             - "currency": str or None
             - "line_items": list[dict]
+            - "warnings": list[str]
     """
     raw_text = ocr_result.get("text", "")
-    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    lines_data = ocr_result.get("lines")
 
-    vendor = extract_vendor(lines)
+    if lines_data:
+        line_strings = [l.get("text", "").strip() for l in lines_data if l.get("text", "").strip()]
+        line_confs = [l.get("conf", 0.85) for l in lines_data if l.get("text", "").strip()]
+    else:
+        line_strings = [line.strip() for line in raw_text.splitlines() if line.strip()]
+        line_confs = [0.85] * len(line_strings)
+
+    vendor = extract_vendor(line_strings)
     invoice_date = extract_date(raw_text)
     invoice_number = extract_invoice_number(raw_text)
     currency = extract_currency(raw_text)
 
     line_items: List[Dict[str, Any]] = []
-    for line in lines:
-        parsed_item = _parse_line_item(line, vendor=vendor, invoice_number=invoice_number)
-        if parsed_item:
-            line_items.append(parsed_item)
+    warnings: List[str] = []
+
+    # Detect table region boundaries
+    table_start_idx = -1
+    for idx, line in enumerate(line_strings):
+        lower = line.lower()
+        if "description" in lower and ("qty" in lower or "quantity" in lower):
+            table_start_idx = idx
+            break
+
+    table_end_idx = len(line_strings)
+    if table_start_idx != -1:
+        for idx in range(table_start_idx + 1, len(line_strings)):
+            lower = line_strings[idx].lower()
+            if re.search(r"\b(?:subtotal|total)\b", lower):
+                table_end_idx = idx
+                break
+
+        # Parse table region rows
+        for idx in range(table_start_idx + 1, table_end_idx):
+            line = line_strings[idx]
+            if not line:
+                continue
+            parsed_item = _parse_table_line(line)
+            if parsed_item:
+                parsed_item["line_conf"] = line_confs[idx] if idx < len(line_confs) else 0.85
+                line_items.append(parsed_item)
+            else:
+                warnings.append(f"Skipped unrecognized line inside table region: '{line}'")
+    else:
+        # Fallback for documents without explicit Description/Qty table header
+        for idx, line in enumerate(line_strings):
+            parsed_item = _parse_line_item(line, vendor=vendor, invoice_number=invoice_number)
+            if parsed_item:
+                parsed_item["line_conf"] = line_confs[idx] if idx < len(line_confs) else 0.85
+                line_items.append(parsed_item)
 
     return {
         "vendor": vendor,
@@ -313,4 +455,5 @@ def parse(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
         "invoice_number": invoice_number,
         "currency": currency,
         "line_items": line_items,
+        "warnings": warnings,
     }

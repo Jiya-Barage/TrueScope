@@ -26,38 +26,56 @@ FLAG_THRESHOLDS = {
 
 # Domain mapping of expected plausible units per category
 PLAUSIBLE_UNITS_BY_CATEGORY: Dict[str, Set[str]] = {
-    "stationary_fuel_diesel": {"litres", "gallons", "l", "gal"},
-    "mobile_fuel_diesel": {"litres", "gallons", "l", "gal"},
-    "mobile_fuel_petrol": {"litres", "gallons", "l", "gal"},
+    "stationary_fuel_diesel": {"litre", "litres", "liter", "liters", "gallons", "l", "gal"},
+    "mobile_fuel_diesel": {"litre", "litres", "liter", "liters", "gallons", "l", "gal"},
+    "mobile_fuel_petrol": {"litre", "litres", "liter", "liters", "gallons", "l", "gal"},
     "natural_gas": {"kwh", "m3", "therms"},
     "electricity_grid": {"kwh", "mwh", "units"},
-    "freight_transport": {"tonne.km", "km", "miles", "tonnes", "kg"},
-    "business_travel": {"km", "miles", "passenger.km"},
-    "purchased_goods": {"kg", "units", "tonnes", "items"},
-    "waste_disposal": {"tonnes", "kg", "litres", "m3"},
+    "freight_transport": {"tonne.km", "km", "miles", "tonnes", "kg", "trip", "nos"},
+    "business_travel": {"km", "miles", "passenger.km", "trip", "nos"},
+    "purchased_goods": {"kg", "units", "tonnes", "items", "nos", "reams"},
+    "waste_disposal": {"tonnes", "kg", "litres", "litre", "m3", "month"},
 }
 
 
 def _calculate_ocr_score(
     line_item: Dict[str, Any], ocr_result: Dict[str, Any]
 ) -> tuple[float, Optional[str]]:
-    """Compute average OCR confidence for words in the line item.
+    """Compute OCR confidence for the line item using lines if available, or words.
 
     Args:
         line_item: Extracted line item dict.
-        ocr_result: Full OCR extraction result containing 'words'.
+        ocr_result: Full OCR extraction result containing 'lines' and/or 'words'.
 
     Returns:
         Tuple of (ocr_score between 0.0 and 1.0, explanation string).
     """
+    # 1. Use per-line OCR confidence from line_conf if attached by parser
+    if line_item.get("line_conf") is not None:
+        try:
+            score = float(line_item["line_conf"])
+            norm = max(0.0, min(1.0, score))
+            return norm, f"OCR line recognition quality is {int(norm * 100)}%"
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Check ocr_result['lines'] for matching line
+    desc = line_item.get("description", "").lower().strip()
+    lines = ocr_result.get("lines", [])
+    if lines and desc:
+        for line_obj in lines:
+            line_text = line_obj.get("text", "").lower()
+            if desc in line_text or line_text in desc:
+                score = float(line_obj.get("conf", 0.85))
+                norm = max(0.0, min(1.0, score))
+                return norm, f"OCR line recognition quality is {int(norm * 100)}%"
+
+    # 3. Fallback to word-level average for backwards compatibility
     words = ocr_result.get("words", [])
     if not words:
-        # Default neutral baseline if OCR word data is not present (e.g. mocked input)
         return 0.85, "Baseline OCR word confidence assumed"
 
-    desc = line_item.get("description", "")
-    desc_tokens = set(re.findall(r"\w+", desc.lower()))
-
+    desc_tokens = set(re.findall(r"\w+", desc))
     matching_confs = [
         w["conf"]
         for w in words
@@ -69,7 +87,6 @@ def _calculate_ocr_score(
         score = max(0.0, min(1.0, avg_conf))
         return score, f"OCR word recognition quality is {int(score * 100)}%"
 
-    # Fallback to overall OCR average if individual words were not mapped
     all_confs = [w["conf"] for w in words if isinstance(w.get("conf"), (int, float))]
     if all_confs:
         avg_all = sum(all_confs) / len(all_confs)
@@ -128,7 +145,7 @@ def _calculate_completeness(line_item: Dict[str, Any]) -> tuple[float, List[str]
 def _calculate_sanity(
     line_item: Dict[str, Any], classification: Dict[str, Any]
 ) -> tuple[float, str]:
-    """Verify if the measurement unit is physically plausible for the activity category.
+    """Verify if the measurement unit is physically plausible and rate check passes.
 
     Args:
         line_item: Extracted line item dict.
@@ -137,6 +154,20 @@ def _calculate_sanity(
     Returns:
         Tuple of (sanity score 0.0 to 1.0, explanation string).
     """
+    # Check if qty x rate mismatch was detected by parser or direct calculation
+    has_rate_mismatch = "qty x rate does not match amount" in line_item.get("reasons", [])
+    if not has_rate_mismatch:
+        qty = line_item.get("quantity")
+        rate = line_item.get("rate")
+        amt = line_item.get("amount")
+        if qty is not None and rate is not None and amt is not None and amt > 0:
+            diff = abs(qty * rate - amt)
+            if (diff / amt) > 0.02:
+                has_rate_mismatch = True
+
+    if has_rate_mismatch:
+        return 0.10, "qty x rate does not match amount"
+
     category = classification.get("category", "unknown")
     unit = (line_item.get("unit") or "").lower()
 

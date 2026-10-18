@@ -50,7 +50,7 @@ def run(path: str, invoice_id: Optional[str] = None) -> Dict[str, Any]:
 
     # Step 3 & 4: Classification and Confidence Scoring for each line item
     processed_line_items: List[Dict[str, Any]] = []
-    warnings: List[str] = []
+    warnings: List[str] = list(parsed_meta.get("warnings", []))
 
     if parsed_meta.get("vendor") is None:
         warnings.append("Vendor name could not be confidently identified.")
