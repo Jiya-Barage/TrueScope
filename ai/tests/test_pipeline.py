@@ -445,8 +445,132 @@ def test_parser_with_lines_and_rate_mismatch():
     # 4. Taxi line triggers mismatch reason (2 * 4,350 != 2,700)
     assert "qty x rate does not match amount" in items[4]["reasons"]
 
-    # 5. Check scorer on the Taxi line lowers score and retains mismatch reason
+    # 5. Check scorer on the Taxi line lowers score to low (< 0.50) and retains mismatch reason
     class_res = classify(items[4])
     scored = score(items[4], ocr_result, class_res)
     assert "qty x rate does not match amount" in scored["reasons"]
-    assert scored["confidence_flag"] == "medium"
+    assert scored["confidence"] < 0.50
+    assert scored["confidence_flag"] == "low"
+
+    # Verify Fix 2 description cleanup stripped '«'
+    assert items[3]["description"] == "Waste disposal service monthly"
+
+
+# ---------------------------------------------------------------------------
+# Task: Tests for Fix 1, Fix 2, Fix 3
+# ---------------------------------------------------------------------------
+
+def test_group_words_into_lines_different_blocks_same_row():
+    """Unit-test _group_words_into_lines with words having same vertical position but different order."""
+    from ai.ocr.extractor import _group_words_into_lines
+
+    # Mimic Tesseract multi-block output where columns appear in different blocks/order
+    # Row 1 (top=100, height=20): Diesel 250 Litre 92.40 23,100.00
+    words = [
+        {"text": "23,100.00", "conf": 0.95, "top": 102, "left": 450, "height": 20},  # Amount (block 14)
+        {"text": "Diesel", "conf": 0.90, "top": 100, "left": 50, "height": 20},       # Desc (block 7)
+        {"text": "92.40", "conf": 0.92, "top": 101, "left": 350, "height": 20},       # Rate (block 11)
+        {"text": "250", "conf": 0.88, "top": 100, "left": 150, "height": 20},         # Qty (block 7)
+        {"text": "Litre", "conf": 0.91, "top": 101, "left": 230, "height": 20},       # Unit (block 9)
+        # Row 2 (top=140, height=20): Petrol 60 Litre 104.10 6,246.00
+        {"text": "Petrol", "conf": 0.94, "top": 140, "left": 50, "height": 20},
+        {"text": "60", "conf": 0.90, "top": 140, "left": 150, "height": 20},
+        {"text": "Litre", "conf": 0.92, "top": 141, "left": 230, "height": 20},
+        {"text": "104.10", "conf": 0.89, "top": 140, "left": 350, "height": 20},
+        {"text": "6,246.00", "conf": 0.93, "top": 141, "left": 450, "height": 20},
+    ]
+
+    lines = _group_words_into_lines(words)
+    assert len(lines) == 2
+
+    # Row 1 must be correctly sorted horizontally
+    assert lines[0]["text"] == "Diesel 250 Litre 92.40 23,100.00"
+    assert 0.0 <= lines[0]["conf"] <= 1.0
+
+    # Row 2 must be correctly grouped and ordered
+    assert lines[1]["text"] == "Petrol 60 Litre 104.10 6,246.00"
+
+
+def test_clean_description_strips_junk_preserves_numbers():
+    """Unit-test _clean_description for junk symbol stripping and number preservation."""
+    from ai.parsing.parser import _clean_description
+
+    assert _clean_description("Waste disposal service « monthly") == "Waste disposal service monthly"
+    assert _clean_description(". High Speed Diesel (HSD) for generator 250 ,") == "High Speed Diesel (HSD) for generator 250"
+    assert _clean_description("Courier delivery | urgent ~ overnight _") == "Courier delivery urgent overnight"
+    assert _clean_description("Freight transport 3.5 tonne truck") == "Freight transport 3.5 tonne truck"
+
+
+def test_mismatch_penalty_forces_low_confidence():
+    """Unit-test that rate mismatch forces confidence < 0.50 ('low') and preserves reason."""
+    from ai.confidence.scorer import RATE_MISMATCH_PENALTY
+
+    assert RATE_MISMATCH_PENALTY > 0.0
+
+    line_item = {
+        "description": "Taxi hire for client visit",
+        "quantity": 2.0,
+        "unit": "Trip",
+        "rate": 4350.00,
+        "amount": 2700.00,  # 2 * 4350 = 8700 != 2700
+    }
+    ocr_result = {"words": []}
+    classification = {
+        "category": "business_travel",
+        "scope": 3,
+        "match_strength": 0.90,
+        "reason": "Matched taxi",
+    }
+
+    scored = score(line_item, ocr_result, classification)
+    assert scored["confidence"] < 0.50
+    assert scored["confidence_flag"] == "low"
+    assert "qty x rate does not match amount" in scored["reasons"]
+
+
+def test_overall_confidence_penalizes_low_lines(tmp_path):
+    """Test that overall_confidence drops when a line is low due to rate mismatch."""
+    dummy_invoice = tmp_path / "invoice.png"
+    dummy_invoice.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    # Mock OCR with 2 items: 1 valid match, 1 arithmetic mismatch
+    mock_ocr = {
+        "text": (
+            "Test Vendor\n"
+            "Invoice No: INV-101\n"
+            "Date: 2024-03-01\n"
+            "Currency: INR\n"
+            "Description Qty Unit Rate Amount\n"
+            "Diesel fuel 100 Litre 90.00 9000.00\n"
+            "Taxi ride 2 Trip 1000.00 500.00\n"
+            "Total: 9500.00\n"
+        ),
+        "lines": [
+            {"text": "Test Vendor", "conf": 0.95},
+            {"text": "Invoice No: INV-101", "conf": 0.95},
+            {"text": "Date: 2024-03-01", "conf": 0.95},
+            {"text": "Currency: INR", "conf": 0.95},
+            {"text": "Description Qty Unit Rate Amount", "conf": 0.95},
+            {"text": "Diesel fuel 100 Litre 90.00 9000.00", "conf": 0.95},
+            {"text": "Taxi ride 2 Trip 1000.00 500.00", "conf": 0.95},
+            {"text": "Total: 9500.00", "conf": 0.95},
+        ],
+        "words": [],
+        "pages": 1,
+    }
+
+    with patch("ai.pipeline.extract", return_value=mock_ocr):
+        result = run(str(dummy_invoice))
+
+    assert len(result["line_items"]) == 2
+    # Item 1 should be high/medium
+    assert result["line_items"][0]["confidence_flag"] in {"high", "medium"}
+    # Item 2 has rate mismatch (2 * 1000 != 500), should be low
+    assert result["line_items"][1]["confidence_flag"] == "low"
+
+    # overall_confidence should be mean * (1 / 2), significantly lower than clean mean
+    item_confs = [it["confidence"] for it in result["line_items"]]
+    expected_overall = round((sum(item_confs) / 2) * (1 / 2), 2)
+    assert result["overall_confidence"] == expected_overall
+    assert result["overall_confidence"] < 0.50
+
