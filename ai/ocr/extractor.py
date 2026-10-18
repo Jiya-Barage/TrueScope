@@ -15,15 +15,20 @@ from PIL import Image, ImageOps
 import pytesseract
 
 # Load environment variables from .env file if present
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 load_dotenv()
 
-# Configure Tesseract binary path if specified in environment
+# Configure Tesseract binary path if specified in environment or default install
 TESSERACT_CMD = os.getenv("TESSERACT_CMD")
+if not TESSERACT_CMD and os.path.isfile(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
+    TESSERACT_CMD = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 if TESSERACT_CMD:
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
-# Configure Poppler binaries directory if specified in environment
-POPPLER_PATH = os.getenv("POPPLER_PATH") or None
+# Configure Poppler binaries directory if specified in environment or default install
+POPPLER_PATH = os.getenv("POPPLER_PATH")
+if not POPPLER_PATH and os.path.isdir(r"C:\poppler\poppler-24.08.0\Library\bin"):
+    POPPLER_PATH = r"C:\poppler\poppler-24.08.0\Library\bin"
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 
@@ -43,20 +48,27 @@ def preprocess_image(image: Image.Image) -> Image.Image:
     return ImageOps.autocontrast(grayscale)
 
 
-def _extract_from_image(image: Image.Image) -> tuple[str, List[Dict[str, Any]]]:
+def _extract_from_image(
+    image: Image.Image, page: int = 1
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Run OCR on a single PIL Image using pytesseract image_to_data.
+
+    Groups words into lines by (page, block_num, par_num, line_num).
 
     Args:
         image: Input PIL Image.
+        page: Page number index (1-based).
 
     Returns:
-        A tuple of (extracted_text, list of word dicts with normalized confidence).
+        A tuple of (lines list, words list).
+        lines is [{"text": str, "conf": float (0-1)}].
+        words is [{"text": str, "conf": float (0-1)}].
     """
     processed = preprocess_image(image)
     data = pytesseract.image_to_data(processed, output_type=pytesseract.Output.DICT)
 
     words: List[Dict[str, Any]] = []
-    text_tokens: List[str] = []
+    line_groups: Dict[tuple[int, int, int, int], List[Dict[str, Any]]] = {}
 
     num_entries = len(data.get("text", []))
     for i in range(num_entries):
@@ -76,16 +88,31 @@ def _extract_from_image(image: Image.Image) -> tuple[str, List[Dict[str, Any]]]:
 
         # Normalise confidence from [0, 100] to [0.0, 1.0]
         norm_conf = max(0.0, min(1.0, round(raw_conf / 100.0, 4)))
+        word_obj = {"text": token, "conf": norm_conf}
+        words.append(word_obj)
 
-        words.append({"text": token, "conf": norm_conf})
-        text_tokens.append(token)
+        block_num = int(data.get("block_num", [0])[i])
+        par_num = int(data.get("par_num", [0])[i])
+        line_num = int(data.get("line_num", [0])[i])
+        key = (page, block_num, par_num, line_num)
 
-    page_text = " ".join(text_tokens)
-    return page_text, words
+        if key not in line_groups:
+            line_groups[key] = []
+        line_groups[key].append(word_obj)
+
+    lines: List[Dict[str, Any]] = []
+    for _key, line_words in line_groups.items():
+        if not line_words:
+            continue
+        line_str = " ".join(w["text"] for w in line_words)
+        mean_conf = round(sum(w["conf"] for w in line_words) / len(line_words), 4)
+        lines.append({"text": line_str, "conf": mean_conf})
+
+    return lines, words
 
 
 def extract(path: str) -> Dict[str, Any]:
-    """Extract text, word confidence scores, and page count from an invoice file.
+    """Extract text, lines, word confidence scores, and page count from an invoice file.
 
     Supports PDF (via pdf2image) and standard image formats (.png, .jpg, .jpeg).
 
@@ -94,7 +121,8 @@ def extract(path: str) -> Dict[str, Any]:
 
     Returns:
         A dictionary with:
-            - "text" (str): Full concatenated text extracted from all pages.
+            - "text" (str): Full text with lines joined by "\n".
+            - "lines" (list[dict]): List of {"text": str, "conf": float (0.0 to 1.0)}.
             - "words" (list[dict]): List of {"text": str, "conf": float (0.0 to 1.0)}.
             - "pages" (int): Total number of pages processed.
 
@@ -126,19 +154,19 @@ def extract(path: str) -> Dict[str, Any]:
             # Copy image to memory so the file handle can close
             images = [img.copy()]
 
+    all_lines: List[Dict[str, Any]] = []
     all_words: List[Dict[str, Any]] = []
-    page_texts: List[str] = []
 
-    for image in images:
-        page_text, words = _extract_from_image(image)
-        if page_text:
-            page_texts.append(page_text)
+    for page_idx, image in enumerate(images, start=1):
+        lines, words = _extract_from_image(image, page=page_idx)
+        all_lines.extend(lines)
         all_words.extend(words)
 
-    full_text = "\n".join(page_texts)
+    full_text = "\n".join(l["text"] for l in all_lines)
 
     return {
         "text": full_text,
+        "lines": all_lines,
         "words": all_words,
         "pages": len(images),
     }
