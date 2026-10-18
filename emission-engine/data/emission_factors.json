@@ -1,0 +1,102 @@
+
+{
+    "metadata": {
+        "project": "TrustScope",
+        "version": "1.0.0",
+        "description": "Emission factor library for supported TrustScope activity categories",
+        "status": "verification_in_progress",
+        "note": "Initial factors copied from frontend mock data. Each factor requires source, unit, geography, reporting year, and methodology review before verification.",
+        "default_geography": "India",
+        "source_selection_policy": "Prefer authoritative, activity-specific sources applicable to the reporting geography and period.",
+        "electricity_reference": "https://cea.nic.in/cdm-co2-baseline-database/?lang=en",
+        "electricity_alternative_reference": "https://www.niti.gov.in/sites/default/files/2026-02/Scenarios-Towards-Viksit-Bharat-and-Net-Zero-Sectoral-Insights-Power.pdf",
+        "electricity_reference_year": "2024-25",
+        "electricity_reference_value": 0.710,
+        "electricity_reference_unit": "kg CO2/kWh",
+        "electricity_reference_note": "NITI Aayog report, Annexure E. Reference benchmark only; confirm suitability for the intended reporting methodology before adopting it.",
+        "international_reference": "https://www.gov.uk/government/collections/government-conversion-factors-for-company-reporting",
+        "factor_verification_required": true
+    },
+    "factors": [
+        {
+            "category": "Purchased Electricity",
+            "scope": "Scope 2",
+            "activity_unit": "kWh",
+            "factor": 0.710,
+            "factor_unit": "kg CO2/kWh",
+            "source": "https://www.niti.gov.in/sites/default/files/2026-02/Scenarios-Towards-Viksit-Bharat-and-Net-Zero-Sectoral-Insights-Power.pdf",
+            "source_year": 2025,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Fleet Diesel",
+            "scope": "Scope 1",
+            "activity_unit": "Litres",
+            "factor": 2.687,
+            "factor_unit": "kg CO2e/Litre",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Natural Gas Heating",
+            "scope": "Scope 1",
+            "activity_unit": "kWh",
+            "factor": 0.183,
+            "factor_unit": "kg CO2e/kWh",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Freight & Logistics",
+            "scope": "Scope 3",
+            "activity_unit": "tonne-km",
+            "factor": 0.602,
+            "factor_unit": "kg CO2e/tonne-km",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Waste Management",
+            "scope": "Scope 3",
+            "activity_unit": "Tonnes",
+            "factor": 412.0,
+            "factor_unit": "kg CO2e/Tonne",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Business Travel",
+            "scope": "Scope 3",
+            "activity_unit": "passenger-km",
+            "factor": 0.158,
+            "factor_unit": "kg CO2e/passenger-km",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Packaging Materials",
+            "scope": "Scope 3",
+            "activity_unit": "kg",
+            "factor": 0.940,
+            "factor_unit": "kg CO2e/kg",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        },
+        {
+            "category": "Water & Effluent",
+            "scope": "Scope 3",
+            "activity_unit": "m³",
+            "factor": 0.344,
+            "factor_unit": "kg CO2e/m³",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value"
+        }
+    ]
+}
