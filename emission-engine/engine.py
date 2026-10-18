@@ -1,4 +1,3 @@
-
 import json
 import math
 from pathlib import Path
@@ -228,7 +227,7 @@ def calculate_emissions(category, quantity, unit):
 
 if __name__ == "__main__":
     result = calculate_emissions(
-        category="Purchased Electricity",
+        category="electricity_grid",
         quantity=100,
         unit="kWh",
     )

@@ -17,7 +17,7 @@ def make_factor(
     factor_unit="kg CO2/kWh",
 ):
     return {
-        "category": "Purchased Electricity",
+        "category": "electricity_grid",
         "scope": "Scope 2",
         "activity_unit": "kWh",
         "factor": 0.710,
@@ -59,7 +59,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_basic_emission_calculation(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -68,7 +68,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_zero_quantity(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             0,
             "kWh",
         )
@@ -77,7 +77,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_decimal_quantity(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             2.5,
             "kWh",
         )
@@ -86,16 +86,16 @@ class TestEmissionEngine(unittest.TestCase):
     def test_result_contains_category(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
-        self.assertEqual(result["category"], "Purchased Electricity")
+        self.assertEqual(result["category"], "electricity_grid")
 
     def test_result_contains_scope(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -104,7 +104,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_result_contains_activity_data(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -114,7 +114,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_result_contains_factor(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -124,7 +124,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_result_contains_calculation(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -136,7 +136,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_result_contains_trust_metadata(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -148,7 +148,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_unverified_factor_is_not_verified(self):
         result = self.run_with_library(
             make_library([make_factor()]),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -159,7 +159,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_unverified_factor_status_is_preserved(self):
         result = self.run_with_library(
             make_library([make_factor()]),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -175,7 +175,7 @@ class TestEmissionEngine(unittest.TestCase):
         )
         result = self.run_with_library(
             make_library([factor]),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -193,7 +193,7 @@ class TestEmissionEngine(unittest.TestCase):
         )
         result = self.run_with_library(
             make_library([factor]),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -209,7 +209,7 @@ class TestEmissionEngine(unittest.TestCase):
         )
         result = self.run_with_library(
             make_library([factor]),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -225,7 +225,7 @@ class TestEmissionEngine(unittest.TestCase):
         )
         result = self.run_with_library(
             make_library([factor]),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -238,7 +238,7 @@ class TestEmissionEngine(unittest.TestCase):
             make_library(
                 [make_factor(factor_unit="kg CO2/kWh")]
             ),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -250,7 +250,7 @@ class TestEmissionEngine(unittest.TestCase):
             make_library(
                 [make_factor(factor_unit="kg CO2e/kWh")]
             ),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -262,7 +262,7 @@ class TestEmissionEngine(unittest.TestCase):
             make_library(
                 [make_factor(factor_unit="units/kWh")]
             ),
-            "Purchased Electricity",
+            "electricity_grid",
             100,
             "kWh",
         )
@@ -280,7 +280,7 @@ class TestEmissionEngine(unittest.TestCase):
         factor["activity_unit"] = "litres"
         result = self.run_with_library(
             make_library([factor]),
-            "Purchased Electricity",
+            "electricity_grid",
             10,
             "litre",
         )
@@ -291,7 +291,7 @@ class TestEmissionEngine(unittest.TestCase):
         factor["activity_unit"] = "litres"
         result = self.run_with_library(
             make_library([factor]),
-            "Purchased Electricity",
+            "electricity_grid",
             10,
             "liter",
         )
@@ -300,7 +300,7 @@ class TestEmissionEngine(unittest.TestCase):
     def test_unit_matching_is_case_insensitive(self):
         result = self.run_with_library(
             make_library(),
-            "Purchased Electricity",
+            "electricity_grid",
             10,
             "KWH",
         )
@@ -310,7 +310,7 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot be negative"):
             self.run_with_library(
                 make_library(),
-                "Purchased Electricity",
+                "electricity_grid",
                 -1,
                 "kWh",
             )
@@ -319,7 +319,7 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "valid number"):
             self.run_with_library(
                 make_library(),
-                "Purchased Electricity",
+                "electricity_grid",
                 True,
                 "kWh",
             )
@@ -328,7 +328,7 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "valid number"):
             self.run_with_library(
                 make_library(),
-                "Purchased Electricity",
+                "electricity_grid",
                 "100",
                 "kWh",
             )
@@ -337,7 +337,7 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "finite number"):
             self.run_with_library(
                 make_library(),
-                "Purchased Electricity",
+                "electricity_grid",
                 math.nan,
                 "kWh",
             )
@@ -346,7 +346,7 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "finite number"):
             self.run_with_library(
                 make_library(),
-                "Purchased Electricity",
+                "electricity_grid",
                 math.inf,
                 "kWh",
             )
@@ -364,7 +364,7 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unit"):
             self.run_with_library(
                 make_library(),
-                "Purchased Electricity",
+                "electricity_grid",
                 100,
                 "",
             )
@@ -378,6 +378,27 @@ class TestEmissionEngine(unittest.TestCase):
                 "kWh",
             )
 
+    def test_unsupported_categories_are_rejected(self):
+        unsupported_cases = [
+            ("mobile_fuel_petrol", 10, "litres"),
+            ("stationary_fuel_diesel", 10, "litres"),
+            ("purchased_goods", 10, "kg"),
+            ("Water & Effluent", 10, "m3"),
+        ]
+
+        for category, quantity, unit in unsupported_cases:
+            with self.subTest(category=category, unit=unit):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "No emission factor found",
+                ):
+                    self.run_with_library(
+                        make_library(),
+                        category,
+                        quantity,
+                        unit,
+                    )
+
     def test_invalid_factor_value_is_rejected(self):
         factor = make_factor()
         factor["factor"] = -0.5
@@ -388,7 +409,7 @@ class TestEmissionEngine(unittest.TestCase):
         ):
             self.run_with_library(
                 make_library([factor]),
-                "Purchased Electricity",
+                "electricity_grid",
                 100,
                 "kWh",
             )
@@ -403,7 +424,7 @@ class TestEmissionEngine(unittest.TestCase):
         ):
             self.run_with_library(
                 make_library([factor]),
-                "Purchased Electricity",
+                "electricity_grid",
                 100,
                 "kWh",
             )
@@ -433,7 +454,7 @@ class TestEmissionEngine(unittest.TestCase):
         ):
             self.run_with_library(
                 make_library([factor]),
-                "Purchased Electricity",
+                "electricity_grid",
                 100,
                 "kWh",
             )
