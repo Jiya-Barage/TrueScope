@@ -213,6 +213,24 @@ def extract_currency(text: str) -> Optional[str]:
     return None
 
 
+def _clean_description(desc: str) -> str:
+    """Clean OCR junk symbols from description while preserving numbers and text.
+
+    Strips stray OCR junk symbols (such as «, », |, _, ~) from within and at the
+    edges of descriptions, and strips leading/trailing periods, commas, colons,
+    hyphens, and whitespace. Leaves numbers, decimals, and words intact.
+    """
+    if not desc:
+        return ""
+    # Replace stray OCR symbols with a space so adjacent words don't merge
+    cleaned = re.sub(r"[«»|_~]+", " ", desc)
+    # Collapse multiple whitespace sequences into a single space
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # Strip leading and trailing punctuation and whitespace
+    cleaned = cleaned.strip(" .,:;-_«»|~").strip()
+    return cleaned
+
+
 def _clean_num(val: str) -> Optional[float]:
     """Clean number string by stripping thousands commas and trailing dots."""
     cleaned = val.strip().rstrip(".").replace(",", "")
@@ -258,7 +276,7 @@ def _parse_table_line(line: str) -> Optional[Dict[str, Any]]:
         amount = _clean_num(d["amount"])
         raw_unit = d["unit"]
         unit = UNIT_ALIASES.get(raw_unit.lower().strip("."), raw_unit)
-        desc = d["desc"].strip().rstrip(":-«").strip()
+        desc = _clean_description(d["desc"])
 
         reasons = []
         if qty is not None and rate is not None and amount is not None and amount > 0:
@@ -282,7 +300,7 @@ def _parse_table_line(line: str) -> Optional[Dict[str, Any]]:
         amount = _clean_num(d["amount"])
         raw_unit = d["unit"]
         unit = UNIT_ALIASES.get(raw_unit.lower().strip("."), raw_unit)
-        desc = d["desc"].strip().rstrip(":-«").strip()
+        desc = _clean_description(d["desc"])
 
         return {
             "description": desc,
@@ -360,8 +378,7 @@ def _parse_line_item(
     else:
         description = remaining_text
 
-    description = re.sub(r"^[^\w]+", "", description)
-    description = re.sub(r"\s+", " ", description).strip()
+    description = _clean_description(description)
 
     if amount is None and quantity is None:
         return None

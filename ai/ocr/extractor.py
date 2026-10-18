@@ -48,16 +48,98 @@ def preprocess_image(image: Image.Image) -> Image.Image:
     return ImageOps.autocontrast(grayscale)
 
 
+def _group_words_into_lines(words: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group words into reading-order lines based on vertical position.
+
+    Computes each word's vertical center (top + height / 2), sorts words by center,
+    and starts a new line when a word's center differs from the current line's running
+    mean center by more than ~0.6 * median_word_height. Then sorts words in each
+    line by 'left' coordinate.
+
+    Args:
+        words: List of word dicts with 'text', 'conf', 'top', 'left', 'height'.
+
+    Returns:
+        List of line dicts: [{"text": str, "conf": float (0.0 to 1.0)}].
+    """
+    if not words:
+        return []
+
+    # Calculate median word height as baseline for clustering threshold
+    valid_heights = [float(w.get("height", 10)) for w in words if float(w.get("height", 10)) > 0]
+    if valid_heights:
+        sorted_h = sorted(valid_heights)
+        n = len(sorted_h)
+        median_height = sorted_h[n // 2] if n % 2 != 0 else (sorted_h[n // 2 - 1] + sorted_h[n // 2]) / 2.0
+    else:
+        median_height = 15.0
+
+    threshold = max(6.0, 0.6 * median_height)
+
+    # Compute vertical center for each word
+    enriched = []
+    for w in words:
+        top = float(w.get("top", 0))
+        h = float(w.get("height", median_height))
+        center_y = top + h / 2.0
+        enriched.append({
+            "word": w,
+            "center_y": center_y,
+            "left": float(w.get("left", 0)),
+        })
+
+    # Sort primarily by vertical center, secondarily by horizontal left position
+    enriched.sort(key=lambda item: (item["center_y"], item["left"]))
+
+    # Group into lines
+    lines_clusters: List[Dict[str, Any]] = []
+    for item in enriched:
+        cy = item["center_y"]
+        placed = False
+
+        if lines_clusters:
+            last_line = lines_clusters[-1]
+            if abs(cy - last_line["mean_center"]) <= threshold:
+                last_line["items"].append(item)
+                # Update running mean center
+                total_y = sum(x["center_y"] for x in last_line["items"])
+                last_line["mean_center"] = total_y / len(last_line["items"])
+                placed = True
+
+        if not placed:
+            lines_clusters.append({
+                "mean_center": cy,
+                "items": [item],
+            })
+
+    # For each cluster, sort words by left, join with single space, and compute mean conf
+    result_lines: List[Dict[str, Any]] = []
+    for cluster in lines_clusters:
+        cluster_items = cluster["items"]
+        cluster_items.sort(key=lambda x: x["left"])
+        line_text = " ".join(x["word"]["text"].strip() for x in cluster_items if x["word"]["text"].strip())
+        if not line_text:
+            continue
+        confs = [float(x["word"]["conf"]) for x in cluster_items if isinstance(x["word"].get("conf"), (int, float))]
+        mean_conf = round(sum(confs) / len(confs), 4) if confs else 0.85
+        result_lines.append({
+            "text": line_text,
+            "conf": mean_conf,
+        })
+
+    return result_lines
+
+
 def _extract_from_image(
-    image: Image.Image, page: int = 1
+    image: Image.Image,
+    page: int = 1,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Run OCR on a single PIL Image using pytesseract image_to_data.
 
-    Groups words into lines by (page, block_num, par_num, line_num).
+    Groups words into lines by vertical position (top + height/2).
 
     Args:
         image: Input PIL Image.
-        page: Page number index (1-based).
 
     Returns:
         A tuple of (lines list, words list).
@@ -67,10 +149,38 @@ def _extract_from_image(
     processed = preprocess_image(image)
     data = pytesseract.image_to_data(processed, config="--psm 6", output_type=pytesseract.Output.DICT)
 
-    words: List[Dict[str, Any]] = []
-    line_groups: Dict[tuple[int, int, int, int], List[Dict[str, Any]]] = {}
+    words_with_geom: List[Dict[str, Any]] = []
+    clean_words: List[Dict[str, Any]] = []
 
     num_entries = len(data.get("text", []))
+
+    # Estimate baseline skew angle/slope across multi-word lines to normalize tilted scans
+    line_word_pts: Dict[int, List[tuple[float, float]]] = {}
+    for i in range(num_entries):
+        raw_text = data["text"][i]
+        token = raw_text.strip() if isinstance(raw_text, str) else ""
+        if not token:
+            continue
+        try:
+            if float(data["conf"][i]) < 0:
+                continue
+        except (ValueError, TypeError):
+            continue
+        ln = int(data.get("line_num", [0])[i])
+        left = float(data.get("left", [0])[i])
+        cy = float(data.get("top", [0])[i]) + float(data.get("height", [10])[i]) / 2.0
+        line_word_pts.setdefault(ln, []).append((left, cy))
+
+    slopes: List[float] = []
+    for pts in line_word_pts.values():
+        if len(pts) >= 2:
+            pts.sort(key=lambda p: p[0])
+            dx = pts[-1][0] - pts[0][0]
+            if dx > 150:
+                slopes.append((pts[-1][1] - pts[0][1]) / dx)
+
+    median_slope = sorted(slopes)[len(slopes) // 2] if slopes else 0.0
+
     for i in range(num_entries):
         raw_text = data["text"][i]
         token = raw_text.strip() if isinstance(raw_text, str) else ""
@@ -88,27 +198,26 @@ def _extract_from_image(
 
         # Normalise confidence from [0, 100] to [0.0, 1.0]
         norm_conf = max(0.0, min(1.0, round(raw_conf / 100.0, 4)))
-        word_obj = {"text": token, "conf": norm_conf}
-        words.append(word_obj)
+        top = float(data.get("top", [0])[i])
+        left = float(data.get("left", [0])[i])
+        height = float(data.get("height", [10])[i])
+        width = float(data.get("width", [10])[i])
 
-        block_num = int(data.get("block_num", [0])[i])
-        par_num = int(data.get("par_num", [0])[i])
-        line_num = int(data.get("line_num", [0])[i])
-        key = (page, block_num, par_num, line_num)
+        effective_top = top - median_slope * left
 
-        if key not in line_groups:
-            line_groups[key] = []
-        line_groups[key].append(word_obj)
+        word_obj = {
+            "text": token,
+            "conf": norm_conf,
+            "top": effective_top,
+            "left": left,
+            "height": height,
+            "width": width,
+        }
+        words_with_geom.append(word_obj)
+        clean_words.append({"text": token, "conf": norm_conf})
 
-    lines: List[Dict[str, Any]] = []
-    for _key, line_words in line_groups.items():
-        if not line_words:
-            continue
-        line_str = " ".join(w["text"] for w in line_words)
-        mean_conf = round(sum(w["conf"] for w in line_words) / len(line_words), 4)
-        lines.append({"text": line_str, "conf": mean_conf})
-
-    return lines, words
+    lines = _group_words_into_lines(words_with_geom)
+    return lines, clean_words
 
 
 def extract(path: str) -> Dict[str, Any]:
