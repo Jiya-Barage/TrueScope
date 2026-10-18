@@ -13,10 +13,16 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
     'GHG Scope',
     'Quantity',
     'Unit',
-    'Emission Factor (kg CO2e/unit)',
+    'Emission Factor',
+    'Emission Factor Unit',
     'Emission Factor Status',
-    'Estimated Emissions (kg CO2e)',
+    'Estimated Emissions',
+    'Emissions Unit',
+    'Emissions Basis',
+    'Calculation Status',
+    'Calculation Note',
     'Confidence Score (%)',
+    'Data Provenance',
     'Status',
   ];
 
@@ -26,30 +32,57 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
     return `"${str}"`;
   };
 
-  const rows = invoices.map((inv) => [
-    escapeCSV(inv.invoiceNumber),
-    escapeCSV(inv.date),
-    escapeCSV(inv.supplier),
-    escapeCSV(inv.itemDescription),
-    escapeCSV(inv.activityCategory),
-    escapeCSV(inv.scope),
-    escapeCSV(inv.quantity),
-    escapeCSV(inv.unit),
-    escapeCSV(inv.emissionFactor),
-    escapeCSV(inv.emissionFactorNote || 'Demo Mock Factor - Unverified'),
-    escapeCSV(inv.calculatedEmissionsKg),
-    escapeCSV(inv.confidence),
-    escapeCSV(inv.status),
-  ]);
+  const rows = invoices.map((inv) => {
+    const isUploaded = Boolean(inv.isBackendUpload);
+    const hasEngineCalculation =
+      isUploaded && inv.calculationStatus === 'calculated';
+    const emissionsValue = isUploaded
+      ? hasEngineCalculation
+        ? inv.emissionsValue
+        : null
+      : inv.calculatedEmissionsKg;
+    const emissionsUnit = isUploaded ? inv.emissionsUnit : 'kg CO2e';
+    const emissionsBasis = isUploaded ? inv.emissionsBasis : 'CO2e';
+    const calculationStatus = isUploaded
+      ? inv.calculationStatus || 'not_available'
+      : 'predefined_demo_value';
+    const provenance = inv.source?.label || (isUploaded ? 'uploaded_invoice' : 'demo_mock');
+
+    return [
+      escapeCSV(inv.invoiceNumber),
+      escapeCSV(inv.date),
+      escapeCSV(inv.supplier),
+      escapeCSV(inv.itemDescription),
+      escapeCSV(inv.activityCategory),
+      escapeCSV(inv.scope),
+      escapeCSV(inv.quantity),
+      escapeCSV(inv.unit),
+      escapeCSV(inv.emissionFactor),
+      escapeCSV(inv.emissionFactorUnit),
+      escapeCSV(inv.emissionFactorNote || (isUploaded ? null : 'Demo Mock Factor - Unverified')),
+      escapeCSV(emissionsValue),
+      escapeCSV(emissionsUnit),
+      escapeCSV(emissionsBasis),
+      escapeCSV(calculationStatus),
+      escapeCSV(
+        isUploaded
+          ? inv.calculationReason
+          : 'Predefined demo/mock value; not an engine calculation.',
+      ),
+      escapeCSV(inv.confidence),
+      escapeCSV(provenance),
+      escapeCSV(inv.status),
+    ];
+  });
 
   // Include disclaimer and metadata in CSV header comments
   const reportDate = new Date().toISOString().split('T')[0];
   const metadataLines = [
-    `# TrueScope Carbon Accounting - GHG Activity Data Report (DEMO EXPORT)`,
+    `# TrueScope Carbon Accounting - GHG Activity Data Report`,
     `# Organization: ${companyInfo.name || 'Apex Logistics & Supplies SME'}`,
     `# Reporting Period: ${companyInfo.reportingPeriod || '2024 YTD'}`,
     `# Generated At: ${reportDate}`,
-    `# NOTICE: Data contains demonstration calculations. Emission factors are unverified demo placeholders.`,
+    `# NOTICE: Uploaded rows retain backend emissions basis, unit, and calculation status. Demo/mock rows contain predefined values and are identified in Data Provenance.`,
     `#`,
   ];
 

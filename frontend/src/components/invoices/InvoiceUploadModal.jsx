@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../common/Modal';
 import {
   UploadCloudIcon,
@@ -8,26 +8,38 @@ import {
 } from '../common/Icons';
 import { PRESET_SAMPLE_INVOICES } from '../../data/mockData';
 import { useTrueScope } from '../../context/TrueScopeContext';
+import { apiRequest } from '../../services/api';
+
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 
 export const InvoiceUploadModal = () => {
-  const { isUploadModalOpen, closeUploadModal, addInvoice } = useTrueScope();
+  const { isUploadModalOpen, closeUploadModal, addUploadedInvoice } = useTrueScope();
 
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedPreset, setSelectedPreset] = useState(null);
-  const [processingState, setProcessingState] = useState('idle'); // idle | parsing | classifying | calculating | done | error
-  const [progressPercent, setProgressPercent] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [uploadResponse, setUploadResponse] = useState(null);
+  const uploadInFlight = useRef(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!selectedFile && fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [selectedFile]);
 
   const resetState = () => {
     setSelectedFile(null);
     setSelectedPreset(null);
-    setProcessingState('idle');
-    setProgressPercent(0);
+    setUploadResponse(null);
     setErrorMessage('');
   };
 
   const handleClose = () => {
+    if (uploadInFlight.current) return;
     resetState();
     closeUploadModal();
   };
@@ -36,6 +48,7 @@ export const InvoiceUploadModal = () => {
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isUploading) return;
     if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true);
     } else if (e.type === 'dragleave') {
@@ -47,7 +60,7 @@ export const InvoiceUploadModal = () => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (!isUploading && e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileSelected(e.dataTransfer.files[0]);
     }
   };
@@ -59,6 +72,28 @@ export const InvoiceUploadModal = () => {
   };
 
   const handleFileSelected = (file) => {
+    const extension = `.${file.name.split('.').pop()}`.toLowerCase();
+    if (!SUPPORTED_EXTENSIONS.includes(extension)) {
+      setSelectedFile(null);
+      setSelectedPreset(null);
+      setErrorMessage('Choose a PDF, PNG, JPG, or JPEG invoice file.');
+      return;
+    }
+
+    if (file.size === 0) {
+      setSelectedFile(null);
+      setSelectedPreset(null);
+      setErrorMessage('The selected file is empty. Choose a non-empty invoice file.');
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setSelectedFile(null);
+      setSelectedPreset(null);
+      setErrorMessage('Invoice files must be 10 MiB or smaller.');
+      return;
+    }
+
     setSelectedFile(file);
     setSelectedPreset(null);
     setErrorMessage('');
@@ -66,108 +101,69 @@ export const InvoiceUploadModal = () => {
 
   const handleSelectPreset = (preset) => {
     setSelectedPreset(preset);
-    setSelectedFile({ name: preset.fileName, size: 245000 });
-    setErrorMessage('');
+    setSelectedFile(null);
+    setErrorMessage('Presets are reference data, not files. Demo processing is not connected in this upload workflow.');
   };
 
-  // Start Simulated Processing
-  const handleStartSimulatedProcessing = () => {
-    if (!selectedFile && !selectedPreset) {
-      setErrorMessage('Please select an invoice file or pick a demo preset.');
+  const handleUpload = async () => {
+    if (uploadInFlight.current) return;
+    if (!selectedFile) {
+      setErrorMessage('Select a supported invoice file to upload.');
       return;
     }
 
-    setProcessingState('parsing');
-    setProgressPercent(25);
+    uploadInFlight.current = true;
+    setIsUploading(true);
+    setErrorMessage('');
+    setUploadResponse(null);
 
-    // Step 1: Simulated OCR Parsing
-    setTimeout(() => {
-      setProcessingState('classifying');
-      setProgressPercent(60);
+    const formData = new FormData();
+    formData.append('file', selectedFile);
 
-      // Step 2: Simulated Activity Classification
-      setTimeout(() => {
-        setProcessingState('calculating');
-        setProgressPercent(90);
-
-        // Step 3: Simulated Factor Calculation
-        setTimeout(() => {
-          setProgressPercent(100);
-          setProcessingState('done');
-
-          // Assemble the generated invoice
-          const template = selectedPreset || PRESET_SAMPLE_INVOICES[0];
-          const calculatedEmissions = Math.round(template.quantity * template.emissionFactor);
-
-          const newInvoice = {
-            invoiceNumber: `INV-DEMO-${Math.floor(1000 + Math.random() * 9000)}`,
-            supplier: template.supplier,
-            billingPeriod: 'Current Month Billing Period',
-            totalAmount: template.totalAmount,
-            currency: 'USD',
-            itemDescription: template.itemDescription,
-            quantity: template.quantity,
-            unit: template.unit,
-            activityCategory: template.activityCategory,
-            scope: template.scope,
-            emissionFactor: template.emissionFactor,
-            emissionFactorUnit: template.emissionFactorUnit,
-            emissionFactorNote: 'Demo Mock Factor - Unverified (Simulation)',
-            calculatedEmissionsKg: calculatedEmissions,
-            confidence: template.confidence || 95,
-            confidenceLevel: 'high',
-            extractedFields: {
-              fileName: selectedFile?.name || template.fileName,
-              fileSize: selectedFile?.size ? `${Math.round(selectedFile.size / 1024)} KB` : '184 KB',
-              scanMethod: 'Simulated Client OCR Pipeline',
-              processedTimestamp: new Date().toLocaleTimeString(),
-            },
-          };
-
-          // Delay slightly so the user sees 100% completion
-          setTimeout(() => {
-            addInvoice(newInvoice);
-            handleClose();
-          }, 600);
-        }, 800);
-      }, 900);
-    }, 800);
+    try {
+      const response = await apiRequest('/api/invoices/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      addUploadedInvoice(response);
+      setUploadResponse(response);
+      setSelectedFile(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Invoice upload failed.');
+    } finally {
+      uploadInFlight.current = false;
+      setIsUploading(false);
+    }
   };
-
-  const isProcessing =
-    processingState === 'parsing' ||
-    processingState === 'classifying' ||
-    processingState === 'calculating' ||
-    processingState === 'done';
 
   return (
     <Modal
       isOpen={isUploadModalOpen}
       onClose={handleClose}
       title="Upload Invoice for Carbon Estimation"
-      subtitle="Simulate AI-driven invoice parsing, category classification, and CO₂e calculation."
+      subtitle="Upload a supported invoice for synchronous backend processing."
       maxWidth="680px"
       footer={
         <div className="upload-modal-footer">
           <div className="simulation-notice-text">
-            <span>⚡ Simulated client-side processing for prototype review</span>
+            <span>PDF, PNG, JPG, or JPEG • Maximum 10 MiB</span>
           </div>
           <div className="upload-footer-actions">
             <button
               type="button"
               className="btn btn-secondary"
               onClick={handleClose}
-              disabled={isProcessing}
+              disabled={isUploading}
             >
               Cancel
             </button>
             <button
               type="button"
               className="btn btn-primary"
-              onClick={handleStartSimulatedProcessing}
-              disabled={(!selectedFile && !selectedPreset) || isProcessing}
+              onClick={handleUpload}
+              disabled={!selectedFile || isUploading}
             >
-              {isProcessing ? 'Processing...' : 'Run Demo Analysis'}
+              {isUploading ? 'Uploading...' : 'Upload Invoice'}
             </button>
           </div>
         </div>
@@ -178,53 +174,64 @@ export const InvoiceUploadModal = () => {
         <div className="demo-notice-banner">
           <InfoIcon size={18} className="demo-notice-icon" />
           <div className="demo-notice-content">
-            <strong>Demo Simulation Mode</strong>
+            <strong>Backend Processing</strong>
             <p>
-              The backend OCR and emission-factor engine are not connected yet.
-              Uploaded documents are processed locally with mock AI classification to demonstrate the SME user experience.
+              The selected file is sent to the TrueScope backend for synchronous processing. Sample presets below are reference data and are not uploaded by this workflow.
             </p>
           </div>
         </div>
 
-        {/* Processing State Stepper */}
-        {isProcessing && (
+        {isUploading && (
           <div className="processing-progress-card">
             <div className="progress-header">
               <div className="progress-title-row">
                 <SparklesIcon size={18} className="progress-sparkle" />
                 <span className="progress-step-text">
-                  {processingState === 'parsing' && 'Step 1 of 3: Performing OCR text extraction...'}
-                  {processingState === 'classifying' && 'Step 2 of 3: Classifying activity and mapping GHG Scope...'}
-                  {processingState === 'calculating' && 'Step 3 of 3: Applying emission factor and estimating kg CO₂e...'}
-                  {processingState === 'done' && 'Extraction complete! Loading results...'}
+                  Uploading and processing invoice...
                 </span>
               </div>
-              <span className="progress-number">{progressPercent}%</span>
-            </div>
-
-            <div className="progress-bar-track">
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            <div className="progress-steps-list">
-              <span className={`p-step ${progressPercent >= 25 ? 'active' : ''}`}>
-                1. Text OCR
-              </span>
-              <span className={`p-step ${progressPercent >= 60 ? 'active' : ''}`}>
-                2. AI Scope Tagging
-              </span>
-              <span className={`p-step ${progressPercent >= 90 ? 'active' : ''}`}>
-                3. Emission Calculation
-              </span>
             </div>
           </div>
         )}
 
+        {uploadResponse && (() => {
+          const lineItems = uploadResponse.result?.line_items;
+          const lineItemCount = Array.isArray(lineItems) ? lineItems.length : 0;
+          const warnings = Array.isArray(uploadResponse.result?.warnings)
+            ? uploadResponse.result.warnings
+            : [];
+
+          return (
+            <>
+              <div className="download-toast" role="status">
+                {lineItemCount > 0
+                  ? `Upload processed successfully. Invoice ID: ${uploadResponse.invoice_id || 'Unavailable'}. ${lineItemCount} line item(s) are available in the invoice list.`
+                  : `Upload processing completed. Invoice ID: ${uploadResponse.invoice_id || 'Unavailable'}. No line items were extracted.`}
+                {' '}The raw response is retained in this modal.
+              </div>
+              {lineItemCount === 0 && warnings.length > 0 && (
+                <ul role="status">
+                  {warnings.map((warning, index) => (
+                    <li key={`upload-warning-${index}`}>{warning}</li>
+                  ))}
+                </ul>
+              )}
+              <details>
+                <summary>Raw backend response</summary>
+                <pre style={{ maxHeight: '240px', overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                  {JSON.stringify(uploadResponse, null, 2)}
+                </pre>
+              </details>
+            </>
+          );
+        })()}
+
+        {errorMessage && (
+          <div className="upload-error-msg" role="alert">{errorMessage}</div>
+        )}
+
         {/* Drag and Drop Zone */}
-        {!isProcessing && (
+        {!isUploading && (
           <>
             <div
               className={`dropzone-area ${dragActive ? 'drag-over' : ''} ${
@@ -239,7 +246,8 @@ export const InvoiceUploadModal = () => {
                 type="file"
                 id="invoice-file-input"
                 className="dropzone-file-input"
-                accept=".pdf,.png,.jpg,.jpeg,.csv"
+                accept=".pdf,.png,.jpg,.jpeg"
+                ref={fileInputRef}
                 onChange={handleFileChange}
               />
               <label htmlFor="invoice-file-input" className="dropzone-label">
@@ -251,11 +259,13 @@ export const InvoiceUploadModal = () => {
                   )}
                 </div>
 
-                {selectedFile ? (
+                {selectedFile || selectedPreset ? (
                   <div className="selected-file-details">
-                    <span className="file-name">{selectedFile.name}</span>
+                    <span className="file-name">{selectedFile?.name || selectedPreset?.fileName}</span>
                     <span className="file-ready-tag">
-                      ✓ Ready for demo extraction (Click "Run Demo Analysis")
+                      {selectedFile
+                        ? 'Ready to upload to the backend.'
+                        : 'Preset data only; choose an actual file to upload.'}
                     </span>
                   </div>
                 ) : (
@@ -264,16 +274,12 @@ export const InvoiceUploadModal = () => {
                       <strong>Click to browse</strong> or drag and drop invoice here
                     </span>
                     <span className="dropzone-formats">
-                      Supports PDF, PNG, JPG, or CSV (Utility bills, fuel receipts, logistics invoices)
+                      Supports PDF, PNG, JPG, or JPEG up to 10 MiB
                     </span>
                   </div>
                 )}
               </label>
             </div>
-
-            {errorMessage && (
-              <div className="upload-error-msg">{errorMessage}</div>
-            )}
 
             {/* Quick Preset Invoices for Hackathon Testing */}
             <div className="preset-invoices-section">
@@ -291,6 +297,7 @@ export const InvoiceUploadModal = () => {
                       type="button"
                       className={`preset-invoice-card ${isPresetActive ? 'selected' : ''}`}
                       onClick={() => handleSelectPreset(preset)}
+                      disabled={isUploading}
                     >
                       <div className="preset-card-top">
                         <FileTextIcon size={16} />

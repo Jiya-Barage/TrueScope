@@ -1,6 +1,6 @@
 import { ScopeBadge, ConfidenceBadge } from '../common/Badge';
 import { ChevronRightIcon, FileTextIcon } from '../common/Icons';
-import { formatEmissions, formatDate } from '../../utils/formatters';
+import { formatEmissionValue, formatEmissions, formatDate } from '../../utils/formatters';
 import { useTrueScope } from '../../context/TrueScopeContext';
 
 export const InvoiceTable = ({
@@ -82,7 +82,7 @@ export const InvoiceTable = ({
                 <th>Category</th>
                 <th>Scope</th>
                 <th>Quantity</th>
-                <th>Estimated CO₂e</th>
+                <th>Estimated Emissions</th>
                 <th>AI Confidence</th>
                 <th className="th-action">Action</th>
               </tr>
@@ -96,7 +96,7 @@ export const InvoiceTable = ({
                 >
                   <td>
                     <div className="td-invoice-main">
-                      <span className="td-inv-num">{inv.invoiceNumber}</span>
+                      <span className="td-inv-num">{inv.invoiceNumber || inv.backendInvoiceId || inv.id}</span>
                       <span className="td-supplier">{inv.supplier}</span>
                       <span className="td-date">{formatDate(inv.date)}</span>
                     </div>
@@ -114,16 +114,22 @@ export const InvoiceTable = ({
                   </td>
                   <td>
                     <span className="td-quantity">
-                      {inv.quantity.toLocaleString()} <span className="unit-sub">{inv.unit}</span>
+                      {inv.quantity == null ? 'Not provided' : Number(inv.quantity).toLocaleString()}{' '}
+                      {inv.unit && <span className="unit-sub">{inv.unit}</span>}
                     </span>
                   </td>
                   <td>
                     <strong className="td-emissions">
-                      {formatEmissions(inv.calculatedEmissionsKg)}
+                      {inv.isBackendUpload
+                        ? formatEmissionValue(inv.emissionsValue, inv.emissionsUnit)
+                        : formatEmissions(inv.calculatedEmissionsKg)}
                     </strong>
                   </td>
                   <td>
-                    <ConfidenceBadge confidence={inv.confidence} />
+                    <ConfidenceBadge
+                      confidence={inv.confidence}
+                      confidenceFlag={inv.isBackendUpload ? inv.confidenceFlag : undefined}
+                    />
                   </td>
                   <td className="td-action">
                     <button

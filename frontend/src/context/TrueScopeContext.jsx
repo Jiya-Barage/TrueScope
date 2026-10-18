@@ -6,6 +6,7 @@ import {
   CATEGORY_COLORS,
   NOTIFICATIONS,
 } from '../data/mockData';
+import { adaptUploadedInvoice } from '../utils/invoiceAdapter';
 
 const TrueScopeContext = createContext(null);
 
@@ -30,43 +31,54 @@ export function TrueScopeProvider({ children }) {
     let scope2 = 0;
     let scope3 = 0;
     let totalConfidence = 0;
+    let confidenceCount = 0;
 
     const categoryMap = {};
 
     invoices.forEach((inv) => {
-      const em = Number(inv.calculatedEmissionsKg) || 0;
+      const canAggregateAsCo2e =
+        !inv.isBackendUpload ||
+        (inv.emissionsBasis === 'CO2e' && inv.emissionsUnit === 'kg CO2e');
+      const em = canAggregateAsCo2e ? Number(inv.calculatedEmissionsKg) || 0 : 0;
       if (inv.scope === 'Scope 1') scope1 += em;
       else if (inv.scope === 'Scope 2') scope2 += em;
       else if (inv.scope === 'Scope 3') scope3 += em;
 
-      totalConfidence += Number(inv.confidence) || 0;
+      if (typeof inv.confidence === 'number' && Number.isFinite(inv.confidence)) {
+        totalConfidence += inv.confidence;
+        confidenceCount += 1;
+      }
 
       const cat = inv.activityCategory || 'Other';
-      if (!categoryMap[cat]) {
+      if (canAggregateAsCo2e && !categoryMap[cat]) {
         categoryMap[cat] = {
           category: cat,
           emissions: 0,
           scope: inv.scope,
           color: CATEGORY_COLORS[cat] || '#64748b',
-          count: 0,
+          invoiceIds: new Set(),
         };
       }
-      categoryMap[cat].emissions += em;
-      categoryMap[cat].count += 1;
+      if (canAggregateAsCo2e) {
+        categoryMap[cat].emissions += em;
+        categoryMap[cat].invoiceIds.add(inv.backendInvoiceId || inv.id);
+      }
     });
 
     const totalEmissionsKg = scope1 + scope2 + scope3;
 
     // Convert category map to sorted array with percentages
     const categoryBreakdown = Object.values(categoryMap)
-      .map((item) => ({
+      .map(({ invoiceIds, ...item }) => ({
         ...item,
+        count: invoiceIds.size,
         percentage: totalEmissionsKg > 0 ? (item.emissions / totalEmissionsKg) * 100 : 0,
       }))
       .sort((a, b) => b.emissions - a.emissions);
 
-    const averageConfidence =
-      invoices.length > 0 ? Math.round(totalConfidence / invoices.length) : 0;
+    const averageConfidence = confidenceCount > 0
+      ? Math.round(totalConfidence / confidenceCount)
+      : 0;
 
     return {
       totalEmissionsKg,
@@ -76,7 +88,7 @@ export function TrueScopeProvider({ children }) {
       scope1Pct: totalEmissionsKg > 0 ? (scope1 / totalEmissionsKg) * 100 : 0,
       scope2Pct: totalEmissionsKg > 0 ? (scope2 / totalEmissionsKg) * 100 : 0,
       scope3Pct: totalEmissionsKg > 0 ? (scope3 / totalEmissionsKg) * 100 : 0,
-      invoiceCount: invoices.length,
+      invoiceCount: new Set(invoices.map((inv) => inv.backendInvoiceId || inv.id)).size,
       averageConfidence,
       categoryBreakdown,
     };
@@ -109,10 +121,28 @@ export function TrueScopeProvider({ children }) {
     setIsDetailModalOpen(true);
   };
 
+  const addUploadedInvoice = (uploadResponse) => {
+    const adaptedInvoices = adaptUploadedInvoice(uploadResponse);
+    if (adaptedInvoices.length === 0) return;
+
+    setInvoices((prev) => {
+      const existingLineIds = new Set(prev.map((invoice) => invoice.id));
+      const newInvoices = adaptedInvoices.filter((invoice) => !existingLineIds.has(invoice.id));
+      return newInvoices.length > 0 ? [...newInvoices, ...prev] : prev;
+    });
+  };
+
   // Delete invoice
   const deleteInvoice = (id) => {
-    setInvoices((prev) => prev.filter((inv) => inv.id !== id));
-    if (selectedInvoice?.id === id) {
+    const invoiceToDelete = invoices.find((invoice) => invoice.id === id);
+    const backendInvoiceId = invoiceToDelete?.backendInvoiceId;
+    setInvoices((prev) => prev.filter((inv) =>
+      backendInvoiceId ? inv.backendInvoiceId !== backendInvoiceId : inv.id !== id
+    ));
+    if (
+      selectedInvoice?.id === id ||
+      (backendInvoiceId && selectedInvoice?.backendInvoiceId === backendInvoiceId)
+    ) {
       setIsDetailModalOpen(false);
       setSelectedInvoice(null);
     }
@@ -170,6 +200,7 @@ export function TrueScopeProvider({ children }) {
     openInvoiceDetail,
     closeInvoiceDetail,
     addInvoice,
+    addUploadedInvoice,
     deleteInvoice,
     updateInvoice,
     resetDemoData,

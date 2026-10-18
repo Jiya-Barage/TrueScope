@@ -7,7 +7,12 @@ import {
   CheckCircleIcon,
   TrashIcon,
 } from '../common/Icons';
-import { formatEmissions, formatCurrency, formatDate } from '../../utils/formatters';
+import {
+  formatEmissionValue,
+  formatEmissions,
+  formatCurrency,
+  formatDate,
+} from '../../utils/formatters';
 import { useTrueScope } from '../../context/TrueScopeContext';
 
 export const InvoiceDetailModal = () => {
@@ -25,8 +30,10 @@ export const InvoiceDetailModal = () => {
   const [isEditing, setIsEditing] = useState(false);
 
   if (!selectedInvoice) return null;
+  const isBackendUpload = Boolean(selectedInvoice.isBackendUpload);
 
   const handleStartEditing = () => {
+    if (isBackendUpload) return;
     setEditableQuantity(selectedInvoice.quantity || 0);
     setEditableFactor(selectedInvoice.emissionFactor || 0);
     setIsEditing(true);
@@ -41,8 +48,12 @@ export const InvoiceDetailModal = () => {
     closeInvoiceDetail();
   };
 
-  const currentQuantity = isEditing ? Number(editableQuantity) || 0 : selectedInvoice.quantity;
-  const currentFactor = isEditing ? Number(editableFactor) || 0 : selectedInvoice.emissionFactor;
+  const currentQuantity = isEditing
+    ? Number(editableQuantity) || 0
+    : Number(selectedInvoice.quantity) || 0;
+  const currentFactor = isEditing
+    ? Number(editableFactor) || 0
+    : Number(selectedInvoice.emissionFactor) || 0;
   const recalculatedEmissions = Math.round(currentQuantity * currentFactor);
 
   const handleSaveOverride = () => {
@@ -67,7 +78,9 @@ export const InvoiceDetailModal = () => {
       isOpen={isDetailModalOpen}
       onClose={handleClose}
       title="Invoice Extraction & Emission Results"
-      subtitle={`Verified details for ${selectedInvoice.invoiceNumber}`}
+      subtitle={isBackendUpload
+        ? `Processed details for ${selectedInvoice.invoiceNumber || selectedInvoice.backendInvoiceId}`
+        : `Verified details for ${selectedInvoice.invoiceNumber}`}
       maxWidth="720px"
       footer={
         <div className="detail-modal-footer">
@@ -101,13 +114,15 @@ export const InvoiceDetailModal = () => {
               </>
             ) : (
               <>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleStartEditing}
-                >
-                  Edit / Override Values
-                </button>
+                {!isBackendUpload && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleStartEditing}
+                  >
+                    Edit / Override Values
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -126,23 +141,35 @@ export const InvoiceDetailModal = () => {
         <div className="detail-hero-card">
           <div className="detail-hero-top">
             <div className="detail-hero-meta">
-              <span className="detail-inv-number">{selectedInvoice.invoiceNumber}</span>
-              <span className="detail-supplier">{selectedInvoice.supplier}</span>
+              <span className="detail-inv-number">
+                {selectedInvoice.invoiceNumber || selectedInvoice.backendInvoiceId || selectedInvoice.id}
+              </span>
+              <span className="detail-supplier">
+                {selectedInvoice.supplier || (isBackendUpload ? 'Supplier not identified' : '')}
+              </span>
             </div>
             <div className="detail-hero-badges">
               <ScopeBadge scope={selectedInvoice.scope} />
-              <ConfidenceBadge confidence={selectedInvoice.confidence} />
+              <ConfidenceBadge
+                confidence={selectedInvoice.confidence}
+                confidenceFlag={isBackendUpload ? selectedInvoice.confidenceFlag : undefined}
+              />
             </div>
           </div>
 
           <div className="detail-emission-kpi">
             <span className="kpi-label">Estimated Carbon Impact</span>
             <span className="kpi-value">
-              {formatEmissions(isEditing ? recalculatedEmissions : selectedInvoice.calculatedEmissionsKg)}
+              {isBackendUpload
+                ? formatEmissionValue(selectedInvoice.emissionsValue, selectedInvoice.emissionsUnit)
+                : formatEmissions(isEditing ? recalculatedEmissions : selectedInvoice.calculatedEmissionsKg)}
             </span>
             <span className="kpi-sub">
-              Formula: {currentQuantity.toLocaleString()} {selectedInvoice.unit} × {currentFactor}{' '}
-              {selectedInvoice.emissionFactorUnit}
+              {isBackendUpload
+                ? selectedInvoice.emissionCalculation?.calculation ||
+                  selectedInvoice.calculationReason ||
+                  'No engine calculation is available.'
+                : `Formula: ${currentQuantity.toLocaleString()} ${selectedInvoice.unit || ''} × ${currentFactor} ${selectedInvoice.emissionFactorUnit || ''}`}
             </span>
           </div>
         </div>
@@ -181,19 +208,42 @@ export const InvoiceDetailModal = () => {
                 </div>
               ) : (
                 <strong className="field-val">
-                  {selectedInvoice.quantity.toLocaleString()} {selectedInvoice.unit}
+                  {selectedInvoice.quantity == null
+                    ? 'Not provided'
+                    : `${Number(selectedInvoice.quantity).toLocaleString()} ${selectedInvoice.unit || ''}`}
                 </strong>
               )}
             </div>
 
             <div className="detail-field-card">
               <span className="field-label">GHG Protocol Scope</span>
-              <strong className="field-val">{selectedInvoice.scope}</strong>
+              <strong className="field-val">{selectedInvoice.scope || 'Unclassified'}</strong>
             </div>
 
             <div className="detail-field-card">
               <span className="field-label">Emission Factor</span>
-              {isEditing ? (
+              {isBackendUpload ? (
+                <div>
+                  <strong className="field-val">
+                    {selectedInvoice.emissionFactor == null
+                      ? 'Not available'
+                      : `${selectedInvoice.emissionFactor} ${selectedInvoice.emissionFactorUnit || ''}`}
+                  </strong>
+                  {selectedInvoice.emissionFactorNote && (
+                    <span className="factor-note-pill">
+                      {selectedInvoice.emissionFactorNote}
+                    </span>
+                  )}
+                  {selectedInvoice.emissionFactorSource && (
+                    <span className="factor-note-pill">
+                      Source: {selectedInvoice.emissionFactorSource}
+                      {selectedInvoice.emissionFactorSourceYear
+                        ? ` (${selectedInvoice.emissionFactorSourceYear})`
+                        : ''}
+                    </span>
+                  )}
+                </div>
+              ) : isEditing ? (
                 <div className="inline-edit-group">
                   <input
                     type="number"
@@ -219,11 +269,17 @@ export const InvoiceDetailModal = () => {
             <div className="detail-field-card">
               <span className="field-label">AI Extraction Confidence</span>
               <div className="conf-bar-group">
-                <strong className="field-val">{selectedInvoice.confidence}%</strong>
+                <strong className="field-val">
+                  {selectedInvoice.confidence == null ? 'Not available' : `${selectedInvoice.confidence}%`}
+                </strong>
                 <span className="conf-status-text">
-                  {selectedInvoice.confidence >= 90
-                    ? 'High confidence classification'
-                    : 'Standard confidence match'}
+                  {selectedInvoice.confidenceFlag
+                    ? `${selectedInvoice.confidenceFlag} confidence classification`
+                    : selectedInvoice.confidence == null
+                      ? 'Confidence unavailable'
+                      : selectedInvoice.confidence >= 90
+                        ? 'High confidence classification'
+                        : 'Standard confidence match'}
                 </span>
               </div>
             </div>
@@ -249,7 +305,9 @@ export const InvoiceDetailModal = () => {
             <div className="meta-row">
               <span className="meta-name">Total Invoiced Amount</span>
               <span className="meta-value">
-                {formatCurrency(selectedInvoice.totalAmount, selectedInvoice.currency)}
+                {selectedInvoice.totalAmount == null
+                  ? 'Not provided by invoice extraction'
+                  : formatCurrency(selectedInvoice.totalAmount, selectedInvoice.currency)}
               </span>
             </div>
             <div className="meta-row">
@@ -262,11 +320,30 @@ export const InvoiceDetailModal = () => {
           </div>
         </div>
 
+        {isBackendUpload && selectedInvoice.reviewRequired && (
+          <div className="detail-section">
+            <h4 className="detail-section-title">Review required</h4>
+            <ul>
+              {selectedInvoice.reviewReasons.map((reason, index) => (
+                <li key={`${selectedInvoice.id}-review-${index}`}>{reason}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Methodology notice */}
         <div className="detail-disclaimer">
           <span className="disclaimer-bullet">•</span>
           <span>
-            <strong>Demo Calculation:</strong> All greenhouse gas calculations are based on mock emission factors. In production, factors map to certified DEFRA, EPA GHG Hub, or regional grid APIs with full audit logs.
+            {isBackendUpload ? (
+              <>
+                <strong>Backend result:</strong> Emission value and unit are shown as returned by the engine. Confidence is a heuristic score, and review flags remain applicable.
+              </>
+            ) : (
+              <>
+                <strong>Demo Calculation:</strong> All greenhouse gas calculations are based on mock emission factors. In production, factors map to certified DEFRA, EPA GHG Hub, or regional grid APIs with full audit logs.
+              </>
+            )}
           </span>
         </div>
       </div>
