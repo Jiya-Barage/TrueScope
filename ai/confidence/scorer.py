@@ -24,6 +24,9 @@ FLAG_THRESHOLDS = {
     "medium": 0.50,
 }
 
+# Penalty applied when quantity * rate deviates significantly from amount (> 2%)
+RATE_MISMATCH_PENALTY: float = 0.40
+
 # Domain mapping of expected plausible units per category
 PLAUSIBLE_UNITS_BY_CATEGORY: Dict[str, Set[str]] = {
     "stationary_fuel_diesel": {"litre", "litres", "liter", "liters", "gallons", "l", "gal"},
@@ -142,6 +145,20 @@ def _calculate_completeness(line_item: Dict[str, Any]) -> tuple[float, List[str]
     return points, notes
 
 
+def _has_rate_mismatch(line_item: Dict[str, Any]) -> bool:
+    """Check if quantity multiplied by rate deviates significantly (> 2%) from amount."""
+    if "qty x rate does not match amount" in line_item.get("reasons", []):
+        return True
+    qty = line_item.get("quantity")
+    rate = line_item.get("rate")
+    amt = line_item.get("amount")
+    if qty is not None and rate is not None and amt is not None and amt > 0:
+        diff = abs(qty * rate - amt)
+        if (diff / amt) > 0.02:
+            return True
+    return False
+
+
 def _calculate_sanity(
     line_item: Dict[str, Any], classification: Dict[str, Any]
 ) -> tuple[float, str]:
@@ -155,17 +172,7 @@ def _calculate_sanity(
         Tuple of (sanity score 0.0 to 1.0, explanation string).
     """
     # Check if qty x rate mismatch was detected by parser or direct calculation
-    has_rate_mismatch = "qty x rate does not match amount" in line_item.get("reasons", [])
-    if not has_rate_mismatch:
-        qty = line_item.get("quantity")
-        rate = line_item.get("rate")
-        amt = line_item.get("amount")
-        if qty is not None and rate is not None and amt is not None and amt > 0:
-            diff = abs(qty * rate - amt)
-            if (diff / amt) > 0.02:
-                has_rate_mismatch = True
-
-    if has_rate_mismatch:
+    if _has_rate_mismatch(line_item):
         return 0.10, "qty x rate does not match amount"
 
     category = classification.get("category", "unknown")
@@ -235,7 +242,16 @@ def score(
         + SCORING_WEIGHTS["sanity"] * sanity_score
     )
 
+    # Penalize arithmetic mismatch between quantity, rate, and amount
+    if _has_rate_mismatch(line_item):
+        composite -= RATE_MISMATCH_PENALTY
+        if "qty x rate does not match amount" not in reasons:
+            reasons.append("qty x rate does not match amount")
+
     clamped_score = max(0.0, min(1.0, round(composite, 2)))
+    # Guarantee that arithmetic mismatch lands strictly in 'low' (< 0.50)
+    if _has_rate_mismatch(line_item) and clamped_score >= FLAG_THRESHOLDS["medium"]:
+        clamped_score = 0.49
 
     # Determine categorical badge flag
     if clamped_score >= FLAG_THRESHOLDS["high"]:

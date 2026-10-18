@@ -229,7 +229,7 @@ The JSON schema defined below serves as the **strict interface contract** consum
 | `line_items[].confidence` | `number` | Heuristic score [0, 1]. | Weighted average of OCR, completeness, match. | Powers sorting, flagging, and color bars. |
 | `line_items[].confidence_flag` | `string` | `high`, `medium`, `low`. | Discretized via defined thresholds. | Visual badge in UI (Green, Amber, Red). |
 | `line_items[].reasons` | `array[string]`| Explanations. | List of human-readable rule rationale strings. | Displayed in UI explainability drawer/tooltip. |
-| `overall_confidence` | `number` | Mean line confidence. | Mean across items, or 0.0 if no items. | Summary badge on invoice list. |
+| `overall_confidence` | `number` | Aggregate invoice confidence. | Mean line confidence scaled by non-low line ratio (0.0 if no items). | Summary badge on invoice list. |
 | `warnings` | `array[string]` | Alert messages. | Explicit issues during extraction. | Rendered in UI banner if non-empty. |
 
 ---
@@ -281,6 +281,14 @@ The final score is clamped to $[0.0, 1.0]$ and rounded to 2 decimal places.
 | `high` | $\ge 0.80$ | **Green badge**: Ready for automatic aggregation. | Full auto-calculation using primary activity factor. |
 | `medium` | $0.50 \le C < 0.80$ | **Amber badge**: Highlighted for optional human review. | Fallback to spend-based or benchmark factor if unit is missing. |
 | `low` | $< 0.50$ | **Red badge**: "Review Required" button triggers edit modal. | Held in pending state until user confirms category & values. |
+
+### Aggregate Overall Confidence
+
+To ensure erroneous rows (such as mathematical quantity $\times$ rate mismatches) cannot be hidden behind high scores on clean rows, `overall_confidence` is calculated as the mean of line item confidences scaled by the fraction of lines that are not flagged `low`:
+
+$$\text{Overall Confidence} = \left(\frac{1}{N} \sum_{i=1}^N C_i\right) \times \left(\frac{N_{\text{non-low}}}{N}\right)$$
+
+where $N$ is the total number of line items and $N_{\text{non-low}}$ is the count of line items whose `confidence_flag` is not `low`. If $N = 0$, `overall_confidence` is 0.0.
 
 ---
 

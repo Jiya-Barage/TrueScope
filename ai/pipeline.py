@@ -87,8 +87,13 @@ def run(path: str, invoice_id: Optional[str] = None) -> Dict[str, Any]:
         warnings.append("No line items could be parsed from the invoice text.")
         overall_conf = 0.0
     else:
-        conf_sum = sum(item["confidence"] for item in processed_line_items)
-        overall_conf = round(conf_sum / len(processed_line_items), 2)
+        # Compute overall confidence as the mean of line confidences scaled by the
+        # fraction of lines that are not 'low'. This prevents low-confidence or
+        # erroneous rows (e.g. rate mismatches) from being obscured by high-confidence rows.
+        # Formula: round(mean(line_confs) * (non_low_lines / total_lines), 2)
+        mean_conf = sum(item["confidence"] for item in processed_line_items) / len(processed_line_items)
+        non_low_lines = sum(1 for item in processed_line_items if item["confidence_flag"] != "low")
+        overall_conf = round(mean_conf * (non_low_lines / len(processed_line_items)), 2)
 
     return {
         "invoice_id": assigned_id,
