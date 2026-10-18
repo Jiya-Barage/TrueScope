@@ -258,7 +258,7 @@ def _parse_table_line(line: str) -> Optional[Dict[str, Any]]:
         amount = _clean_num(d["amount"])
         raw_unit = d["unit"]
         unit = UNIT_ALIASES.get(raw_unit.lower().strip("."), raw_unit)
-        desc = d["desc"].strip()
+        desc = d["desc"].strip().rstrip(":-«").strip()
 
         reasons = []
         if qty is not None and rate is not None and amount is not None and amount > 0:
@@ -282,7 +282,7 @@ def _parse_table_line(line: str) -> Optional[Dict[str, Any]]:
         amount = _clean_num(d["amount"])
         raw_unit = d["unit"]
         unit = UNIT_ALIASES.get(raw_unit.lower().strip("."), raw_unit)
-        desc = d["desc"].strip()
+        desc = d["desc"].strip().rstrip(":-«").strip()
 
         return {
             "description": desc,

@@ -65,7 +65,7 @@ def _extract_from_image(
         words is [{"text": str, "conf": float (0-1)}].
     """
     processed = preprocess_image(image)
-    data = pytesseract.image_to_data(processed, output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(processed, config="--psm 6", output_type=pytesseract.Output.DICT)
 
     words: List[Dict[str, Any]] = []
     line_groups: Dict[tuple[int, int, int, int], List[Dict[str, Any]]] = {}
