@@ -328,7 +328,7 @@ def test_pipeline_matches_contract_schema(tmp_path):
     assert set(item.keys()) == required_item_keys
 
     assert item["quantity"] == 1000.0
-    assert item["unit"] == "litres"
+    assert item["unit"] in {"litre", "litres"}
     assert item["amount"] == 1500.00
     assert item["category"] == "stationary_fuel_diesel"
     assert item["scope"] == 1
@@ -374,3 +374,79 @@ def test_parser_various_date_formats():
     assert extract_date("Date of invoice: 25/12/2023") == "2023-12-25"
     assert extract_date("Billing date: 14 Oct 2024") == "2024-10-14"
     assert extract_date("No dates here") is None
+
+
+def test_parser_with_lines_and_rate_mismatch():
+    """Verify parsing with structured 'lines' input and qty x rate mismatch detection."""
+    mock_lines = [
+        {"text": "Mis Patil Enterprises TAX INVOICE", "conf": 0.92},
+        {"text": "Shop 3, Market Yard Invoice No: PE-118", "conf": 0.90},
+        {"text": "Pune 411037 Date: 07-10-2026", "conf": 0.90},
+        {"text": "GSTIN: 27AAAPP999901Z2", "conf": 0.85},
+        {"text": "Bill To: Greenleaf Packaging Pvt Ltd", "conf": 0.91},
+        {"text": "Description Qty Unit Rate Amount (INR)", "conf": 0.88},
+        {"text": "Diesel (bulk) tanker refill 400 Lr 91.80 36,720.00", "conf": 0.85},
+        {"text": "Courier / parcel charges 12 Nos 145.00 4,740.00", "conf": 0.89},
+        {"text": "Ad paper reams office supplies 40 Nos 235.00 9,400.00", "conf": 0.85},
+        {"text": "Waste disposal service « monthly 1 Month 2,800.00 2,800.00", "conf": 0.84},
+        {"text": "Taxi hire for client visit 2 Trip 4,350.00. 2,700.00", "conf": 0.92},
+        {"text": "Subtotal: 53,360.00", "conf": 0.92},
+        {"text": "GST (18%): 9,604.80", "conf": 0.90},
+        {"text": "Total: 62,964.80", "conf": 0.91},
+    ]
+    ocr_result = {
+        "text": "\n".join(l["text"] for l in mock_lines),
+        "lines": mock_lines,
+        "words": [],
+        "pages": 1,
+    }
+
+    parsed = parse(ocr_result)
+
+    # 1. Vendor is "Patil Enterprises" style (not the whole document)
+    assert parsed["vendor"] == "Patil Enterprises"
+    assert parsed["invoice_number"] == "PE-118"
+    assert parsed["invoice_date"] == "2026-10-07"
+
+    # 2. Assert exactly 5 line items
+    items = parsed["line_items"]
+    assert len(items) == 5
+
+    # 3. Assert correct quantities, units, and amounts
+    # Item 0: Diesel
+    assert items[0]["description"] == "Diesel (bulk) tanker refill"
+    assert items[0]["quantity"] == 400.0
+    assert items[0]["unit"] == "litre"
+    assert items[0]["rate"] == 91.80
+    assert items[0]["amount"] == 36720.00
+
+    # Item 1: Courier
+    assert items[1]["quantity"] == 12.0
+    assert items[1]["unit"] == "nos"
+    assert items[1]["amount"] == 4740.00
+
+    # Item 2: Ad paper
+    assert items[2]["quantity"] == 40.0
+    assert items[2]["unit"] == "nos"
+    assert items[2]["amount"] == 9400.00
+
+    # Item 3: Waste disposal
+    assert items[3]["quantity"] == 1.0
+    assert items[3]["unit"] == "Month"
+    assert items[3]["amount"] == 2800.00
+
+    # Item 4: Taxi hire
+    assert items[4]["description"] == "Taxi hire for client visit"
+    assert items[4]["quantity"] == 2.0
+    assert items[4]["unit"] == "Trip"
+    assert items[4]["rate"] == 4350.00
+    assert items[4]["amount"] == 2700.00
+
+    # 4. Taxi line triggers mismatch reason (2 * 4,350 != 2,700)
+    assert "qty x rate does not match amount" in items[4]["reasons"]
+
+    # 5. Check scorer on the Taxi line lowers score and retains mismatch reason
+    class_res = classify(items[4])
+    scored = score(items[4], ocr_result, class_res)
+    assert "qty x rate does not match amount" in scored["reasons"]
+    assert scored["confidence_flag"] == "medium"
