@@ -2,6 +2,39 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
+async function getErrorMessage(response) {
+  const statusMessage = `Request failed with status ${response.status}`;
+
+  try {
+    const responseText = await response.text();
+    if (!responseText.trim()) return statusMessage;
+
+    let errorData;
+    try {
+      errorData = JSON.parse(responseText);
+    } catch {
+      return `${statusMessage}: ${responseText.trim()}`;
+    }
+
+    const detail = errorData?.detail;
+    let message;
+    if (typeof detail === "string") {
+      message = detail;
+    } else if (detail && typeof detail === "object") {
+      message =
+        (typeof detail.message === "string" && detail.message) ||
+        (typeof detail.code === "string" && detail.code) ||
+        JSON.stringify(detail);
+    } else if (typeof errorData?.message === "string") {
+      message = errorData.message;
+    }
+
+    return message ? `${statusMessage}: ${message}` : statusMessage;
+  } catch {
+    return statusMessage;
+  }
+}
+
 // Reusable function for communicating with the backend
 export async function apiRequest(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
@@ -29,16 +62,7 @@ export async function apiRequest(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-
-    try {
-      const errorData = await response.json();
-      message = errorData.detail || errorData.message || message;
-    } catch {
-      // Keep the default error message if the response isn't JSON.
-    }
-
-    throw new Error(message);
+    throw new Error(await getErrorMessage(response));
   }
 
   // Handle responses that contain no body.

@@ -786,6 +786,13 @@
   border: 1px solid var(--scope3-border);
 }
 
+.badge-scope-unknown,
+.badge-conf-unknown {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+}
+
 .badge-conf-high {
   background-color: var(--conf-high-bg);
   color: var(--conf-high-color);

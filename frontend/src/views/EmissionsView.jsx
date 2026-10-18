@@ -188,13 +188,13 @@ export const EmissionsView = () => {
           <div className="methodology-block">
             <span className="block-label">2. Emission Factor Application</span>
             <p className="block-text">
-              The matched factor converts activity data into carbon dioxide equivalent: <code>kg CO₂e = Activity × Factor</code>.
+              The engine reports emissions in the matched factor's basis and unit. Only compatible kg CO₂e values are included in dashboard totals.
             </p>
           </div>
           <div className="methodology-block">
             <span className="block-label">3. Compliance Notice</span>
             <p className="block-text">
-              In this hackathon build, emission factors are simulated demonstration values. Production integrations connect to certified repositories (DEFRA, EPA GHG Hub).
+              Preloaded demo records use mock factors. Uploaded results retain backend factor verification status and source where available; unverified factors are flagged for review.
             </p>
           </div>
         </div>

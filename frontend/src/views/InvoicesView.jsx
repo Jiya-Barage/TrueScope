@@ -23,7 +23,7 @@ export const InvoicesView = () => {
         <div className="invoices-header-left">
           <div className="invoices-header-tag">
             <DemoPill label="DEMO REPOSITORY" />
-            <span className="invoices-count-tag">{invoices.length} Documents Processed</span>
+            <span className="invoices-count-tag">{stats.invoiceCount} Documents Processed</span>
           </div>
           <h2 className="invoices-title">Invoices & Activity Data</h2>
           <p className="invoices-subtitle">

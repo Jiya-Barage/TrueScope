@@ -132,7 +132,7 @@ export const OverviewView = () => {
             className="btn btn-ghost"
             onClick={() => setActiveScreen('invoices')}
           >
-            <span>View All ({invoices.length})</span>
+            <span>View All ({stats.invoiceCount})</span>
             <SparklesIcon size={16} />
           </button>
         }
@@ -154,7 +154,7 @@ export const OverviewView = () => {
           <strong>GHG Protocol Alignment & Demo Factor Notice:</strong>
           <span>
             TrueScope applies activity-based emission modeling: <code>Activity Quantity × Emission Factor = kg CO₂e</code>.
-            In this prototype MVP, calculations use simulated mock factors for demonstration and hackathon evaluation.
+            Preloaded demo invoices use mock factors; uploaded rows show backend calculation units and review status.
           </span>
         </div>
       </div>

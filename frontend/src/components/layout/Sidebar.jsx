@@ -11,11 +11,11 @@ import {
 import { useTrueScope } from '../../context/TrueScopeContext';
 
 export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
-  const { activeScreen, setActiveScreen, openUploadModal, invoices } = useTrueScope();
+  const { activeScreen, setActiveScreen, openUploadModal, stats } = useTrueScope();
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: DashboardIcon },
-    { id: 'invoices', label: 'Invoices', icon: FileTextIcon, count: invoices.length },
+    { id: 'invoices', label: 'Invoices', icon: FileTextIcon, count: stats.invoiceCount },
     { id: 'emissions', label: 'Emissions', icon: BarChartIcon },
     { id: 'reports', label: 'Reports', icon: ReportIcon },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },

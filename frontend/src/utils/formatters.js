@@ -13,6 +13,12 @@ export const formatEmissions = (kgValue, unit = 'kg') => {
   return `${Math.round(kgValue).toLocaleString('en-US')} kg CO₂e`;
 };
 
+export const formatEmissionValue = (value, emissionsUnit) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Not calculated';
+  if (typeof emissionsUnit !== 'string' || !emissionsUnit.trim()) return 'Unit unavailable';
+  return `${value.toLocaleString('en-US', { maximumFractionDigits: 3 })} ${emissionsUnit}`;
+};
+
 export const formatNumber = (num, decimals = 0) => {
   if (num === undefined || num === null || isNaN(num)) return '0';
   return Number(num).toLocaleString('en-US', {
