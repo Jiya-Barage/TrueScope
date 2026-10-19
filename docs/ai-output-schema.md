@@ -114,6 +114,8 @@ The JSON schema defined below serves as the **strict interface contract** consum
               "business_travel",
               "purchased_goods",
               "waste_disposal",
+              "water_effluent",
+              "non_emission",
               "unknown"
             ],
             "description": "Standardized activity key matching the Emission Engine lookup."
@@ -121,7 +123,7 @@ The JSON schema defined below serves as the **strict interface contract** consum
           "scope": {
             "type": ["integer", "null"],
             "enum": [1, 2, 3, null],
-            "description": "GHG Protocol Scope (1, 2, 3) or null if unknown."
+            "description": "GHG Protocol Scope (1, 2, 3) or null if unknown or non-emission."
           },
           "confidence": {
             "type": "number",
@@ -138,6 +140,10 @@ The JSON schema defined below serves as the **strict interface contract** consum
             "type": "array",
             "items": { "type": "string" },
             "description": "Short human-readable strings explaining classification & confidence."
+          },
+          "expected_unit": {
+            "type": ["string", "null"],
+            "description": "Optional canonical unit expected by the Emission Engine for activity calculation."
           }
         }
       }
@@ -229,6 +235,7 @@ The JSON schema defined below serves as the **strict interface contract** consum
 | `line_items[].confidence` | `number` | Heuristic score [0, 1]. | Weighted average of OCR, completeness, match. | Powers sorting, flagging, and color bars. |
 | `line_items[].confidence_flag` | `string` | `high`, `medium`, `low`. | Discretized via defined thresholds. | Visual badge in UI (Green, Amber, Red). |
 | `line_items[].reasons` | `array[string]`| Explanations. | List of human-readable rule rationale strings. | Displayed in UI explainability drawer/tooltip. |
+| `line_items[].expected_unit` | `string \| null` | Expected unit token. | Canonical unit expected by Emission Engine; `null` if `non_emission` or `unknown`. | Optional hint for Teammate D to flag unit deviations. |
 | `overall_confidence` | `number` | Aggregate invoice confidence. | Mean line confidence scaled by non-low line ratio (0.0 if no items). | Summary badge on invoice list. |
 | `warnings` | `array[string]` | Alert messages. | Explicit issues during extraction. | Rendered in UI banner if non-empty. |
 
@@ -241,18 +248,26 @@ The JSON schema defined below serves as the **strict interface contract** consum
 > Teammate D must ensure that emission-factor database keys match these exact string tokens.  
 > These keys can **only** be extended or modified by mutual agreement between AI (Teammate C) and Emission Engine (Teammate D).
 
-| Category Key (`category`) | GHG Scope (`scope`) | Typical Units | Description / Example Activities |
-| :--- | :---: | :--- | :--- |
-| `stationary_fuel_diesel` | **1** | `litres`, `gallons` | Diesel consumed in stationary generators, boilers, site plant. |
-| `mobile_fuel_petrol` | **1** | `litres`, `gallons` | Gasoline / petrol used in company-owned or operated road vehicles. |
-| `mobile_fuel_diesel` | **1** | `litres`, `gallons` | Diesel used in company-owned or operated road fleet. |
-| `natural_gas` | **1** | `kwh`, `m3`, `therms` | Piped utility natural gas for heating or industrial use. |
-| `electricity_grid` | **2** | `kwh`, `mwh` | Purchased grid electricity from power utilities. |
-| `freight_transport` | **3** | `tonne.km`, `km`, `miles` | Upstream/downstream third-party shipping, courier, logistics. |
-| `business_travel` | **3** | `km`, `miles`, `passenger.km`| Employee flights, train journeys, hotels, taxi rides. |
-| `purchased_goods` | **3** | `kg`, `units`, `spend` | Raw materials, equipment, consumable office goods. |
-| `waste_disposal` | **3** | `tonnes`, `kg`, `litres` | Commercial waste, landfill, recycling, wastewater processing. |
-| `unknown` | **null** | `null` | Unclassified items requiring user intervention. |
+| Category Key (`category`) | GHG Scope (`scope`) | Expected Unit (`expected_unit`) | Typical / Plausible Units | Description / Example Activities |
+| :--- | :---: | :---: | :--- | :--- |
+| `stationary_fuel_diesel` | **1** | `litre` | `litre`, `litres`, `gallons` | Diesel consumed in stationary generators, boilers, site plant. |
+| `mobile_fuel_petrol` | **1** | `litre` | `litre`, `litres`, `gallons` | Gasoline / petrol used in company-owned or operated road vehicles. |
+| `mobile_fuel_diesel` | **1** | `litre` | `litre`, `litres`, `gallons` | Diesel used in company-owned or operated road fleet / vehicles / transport. |
+| `natural_gas` | **1** | `kWh` | `kWh`, `m3`, `therms` | Piped utility natural gas for heating or industrial use. |
+| `electricity_grid` | **2** | `kWh` | `kWh`, `mwh`, `units` | Purchased grid electricity from power utilities. |
+| `freight_transport` | **3** | `tonne-km` | `tonne-km`, `km`, `trip`, `nos` | Upstream/downstream third-party shipping, courier, logistics. |
+| `business_travel` | **3** | `passenger-km` | `passenger-km`, `km`, `trip` | Employee flights, train journeys, hotels, taxi rides. |
+| `purchased_goods` | **3** | `kg` | `kg`, `units`, `nos` | Raw materials, equipment, consumable office goods. |
+| `waste_disposal` | **3** | `tonne` | `tonne`, `tonnes`, `kg`, `month` | Commercial waste, landfill, recycling disposal. |
+| `water_effluent` | **3** | `m3` | `m3`, `litres`, `kl` | Water supply, effluent treatment, sewage, STP. |
+| `non_emission` | **null** | `null` | `null`, `month`, `nos` | Known non-emission lines: fixed/demand/service/meter charges, GST/tax/cess, late fees, rounding, discounts, deposits. |
+| `unknown` | **null** | `null` | `null` | Unclassified items requiring human intervention. |
+
+### Differentiating `unknown` vs `non_emission`
+
+Both `unknown` and `non_emission` carry a GHG Scope of `null`, but serve fundamentally different roles in TrueScope:
+- **`non_emission` (Scope null):** The classifier *confidently* determined that the line item represents a financial fee, tax, surcharge, discount, or non-combustion utility charge carrying zero direct greenhouse gas emissions (e.g. fixed demand charges, meter rent, GST/VAT/cess, late fees). No emission factor applies and no emission calculation is performed.
+- **`unknown` (Scope null):** The classifier could *not* match the line item to any known emission activity or non-emission rule. It represents unclassified data requiring human review and intervention in the UI.
 
 ---
 
@@ -298,3 +313,14 @@ To foster trust among SME clients and non-expert sustainability managers:
 1. **Explainability Drawer / Popover:** When clicking `confidence_flag`, display the strings in `reasons` as bullet points.
 2. **Missing Field Prompting:** If a reason indicates missing quantity or unit, provide inline edit cells in the React table allowing the user to type in the values directly from the invoice image view.
 3. **Audit Trail:** Maintain the original OCR description alongside any user-edited values to ensure compliance auditability.
+
+---
+
+## 8. Changelog
+
+### 2026-10-19 (Additive Schema Update)
+- **New Category `non_emission` (Scope null):** Added dedicated activity key for known zero-emission invoice items (fixed/demand/service/meter charges, GST, tax, cess, late fees, rounding, discounts, deposits) where no emission factor applies.
+- **New Category `water_effluent` (Scope 3):** Added activity key for water supply, effluent treatment, sewage, and STP items with canonical expected unit `m3`.
+- **Diesel Split:** Formally established the mobile vs stationary diesel split (`mobile_fuel_diesel` for vehicles/truck/fleet/transport/tanker delivery; `stationary_fuel_diesel` for generators/DG/boiler/stationary use or when vehicle context is absent).
+- **Canonical Expected Units:** Standardized expected unit mappings for the Emission Engine and documented the optional `expected_unit` field on line items.
+- **Taxonomy Clarification:** Defined operational distinction between `non_emission` (known zero-emission lines) and `unknown` (unrecognized lines needing human review).
