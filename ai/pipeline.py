@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ai.classification.classifier import classify
-from ai.confidence.scorer import score
+from ai.confidence.scorer import EXPECTED_UNITS_BY_CATEGORY, score
 from ai.ocr.extractor import extract
 from ai.parsing.parser import parse
 
@@ -72,13 +72,14 @@ def run(path: str, invoice_id: Optional[str] = None) -> Dict[str, Any]:
             "confidence": score_res["confidence"],
             "confidence_flag": score_res["confidence_flag"],
             "reasons": score_res["reasons"],
+            "expected_unit": EXPECTED_UNITS_BY_CATEGORY.get(class_res["category"]),
         }
         processed_line_items.append(processed_item)
 
         # Flag specific issues as warnings
         if class_res["category"] == "unknown":
             warnings.append(f"Line {idx} ('{item['description'][:30]}...'): Unclassified activity requiring manual review.")
-        elif item["quantity"] is None or item["unit"] is None:
+        elif class_res["category"] != "non_emission" and (item["quantity"] is None or item["unit"] is None):
             warnings.append(
                 f"Line {idx}: Missing physical quantity/unit; Emission Engine may require spend-based estimation."
             )
