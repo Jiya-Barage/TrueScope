@@ -588,6 +588,17 @@ def test_uploaded_report_aggregates_only_successful_compatible_calculations():
                 "review_required": True,
                 "review_reasons": ["Activity category is unknown or missing."],
             },
+            {
+                **_line_item(category="non_emission", scope=None),
+                "emission_calculation": {
+                    "emissions": 900.0,
+                    "emissions_unit": "kg CO2e",
+                    "emissions_basis": "CO2e",
+                },
+                "calculation_status": "calculated",
+                "review_required": False,
+                "review_reasons": [],
+            },
         ]
     )
     result["invoice_id"] = invoice_id
@@ -604,7 +615,7 @@ def test_uploaded_report_aggregates_only_successful_compatible_calculations():
     report = response.json()
     total = report["totals"]["successful_calculation_total"]
     assert report["source"]["kind"] == "upload"
-    assert len(report["line_items"]) == 3
+    assert len(report["line_items"]) == 4
     assert report["warnings"] == ["Original AI warning"]
     assert report["review_warnings"] == [
         {"line_number": 2, "reasons": ["Emission factor verification is required."]},
@@ -802,6 +813,131 @@ def test_unknown_category_and_missing_factor_are_skipped(monkeypatch):
     assert items[1]["calculation_reason"] == "No emission factor matches this category and unit."
     assert all(item["review_required"] for item in items)
     assert calls == ["electricity_grid"]
+
+
+def test_non_emission_lines_are_not_calculated_and_remain_in_report(monkeypatch):
+    calls = []
+    result = _ai_result(
+        [
+            _line_item(
+                category="non_emission",
+                scope=None,
+                expected_unit="kWh",
+                review_required=True,
+                review_reasons=["AI identified an ambiguous service description."],
+            ),
+            _line_item(
+                category="non_emission",
+                quantity=None,
+                unit=None,
+                scope=None,
+                expected_unit=None,
+            ),
+        ]
+    )
+    response = _upload_ai_result(monkeypatch, result, lambda *args: calls.append(args))
+
+    assert response.status_code == 200
+    payload = response.json()["result"]
+    assert payload["emission_calculation_status"] == "not_applicable"
+    assert payload["warnings"] == ["Original AI warning"]
+    assert calls == []
+    assert [item["calculation_status"] for item in payload["line_items"]] == [
+        "not_applicable",
+        "not_applicable",
+    ]
+    assert [item["scope"] for item in payload["line_items"]] == [None, None]
+    assert [item["expected_unit"] for item in payload["line_items"]] == ["kWh", None]
+    assert all(item["emission_calculation"] is None for item in payload["line_items"])
+    assert [item["review_required"] for item in payload["line_items"]] == [True, False]
+    assert [item["review_reasons"] for item in payload["line_items"]] == [
+        ["AI identified an ambiguous service description."],
+        [],
+    ]
+
+    report_response = client.get(f"/api/invoices/{payload['invoice_id']}/report")
+    assert report_response.status_code == 200
+    report = report_response.json()
+    assert [item["scope"] for item in report["line_items"]] == [None, None]
+    assert [item["expected_unit"] for item in report["line_items"]] == ["kWh", None]
+    assert report["review_warnings"] == [
+        {
+            "line_number": 1,
+            "reasons": ["AI identified an ambiguous service description."],
+        }
+    ]
+    assert report["totals"]["successful_calculations_by_emissions_unit"] == []
+    assert report["totals"]["successful_calculations_by_category"] == []
+    assert report["totals"]["successful_calculation_total"]["value"] is None
+
+
+def test_non_emission_does_not_make_successful_emission_total_incomplete(monkeypatch):
+    engine_result = {
+        "emissions": 5.0,
+        "emissions_unit": "kg CO2e",
+        "emissions_basis": "CO2e",
+    }
+    response = _upload_ai_result(
+        monkeypatch,
+        _ai_result(
+            [
+                _line_item(category="non_emission", scope=None),
+                _line_item(category="electricity_grid"),
+            ]
+        ),
+        lambda category, quantity, unit: engine_result,
+    )
+
+    report_response = client.get(
+        f"/api/invoices/{response.json()['invoice_id']}/report"
+    )
+    assert report_response.status_code == 200
+    totals = report_response.json()["totals"]
+    assert totals["successful_calculation_total"] == {
+        "value": 5.0,
+        "emissions_basis": "CO2e",
+        "emissions_unit": "kg CO2e",
+        "complete": True,
+        "reason": None,
+    }
+    assert totals["successful_calculations_by_category"] == [
+        {
+            "category": "electricity_grid",
+            "emissions_basis": "CO2e",
+            "emissions_unit": "kg CO2e",
+            "total": 5.0,
+            "successful_line_items": 1,
+        }
+    ]
+
+
+@pytest.mark.parametrize("category", ["water_effluent", "mobile_fuel_diesel", "stationary_fuel_diesel"])
+def test_new_emission_categories_skip_missing_factors_without_failing_invoice(monkeypatch, category):
+    calls = []
+
+    def missing_factor(category_arg, quantity, unit):
+        calls.append((category_arg, quantity, unit))
+        raise ValueError(
+            f"No emission factor found for category '{category_arg}' with unit '{unit}'."
+        )
+
+    response = _upload_ai_result(
+        monkeypatch,
+        _ai_result([_line_item(category=category, scope=None, expected_unit="litres")]),
+        missing_factor,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["result"]
+    line_item = payload["line_items"][0]
+    assert payload["processing_status"] == "completed"
+    assert payload["emission_calculation_status"] == "partial"
+    assert line_item["category"] == category
+    assert line_item["expected_unit"] == "litres"
+    assert line_item["calculation_status"] == "skipped"
+    assert line_item["calculation_reason"] == "No emission factor matches this category and unit."
+    assert line_item["review_required"] is True
+    assert calls == [(category, 100, "kWh")]
 
 
 def test_unverified_factor_requires_review(monkeypatch):

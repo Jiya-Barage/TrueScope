@@ -172,17 +172,26 @@ def _validate_ai_result(result: Any) -> None:
 def _enrich_emission_calculations(result: dict[str, Any]) -> None:
     line_items = result.get("line_items", [])
     warnings = result.setdefault("warnings", [])
-    all_calculated = bool(line_items)
+    emission_items = [item for item in line_items if item.get("category") != "non_emission"]
+    all_calculated = bool(emission_items)
 
     for index, item in enumerate(line_items, start=1):
         category = item.get("category")
         quantity = item.get("quantity")
         unit = item.get("unit")
-        review_reasons: list[str] = []
+        original_review_reasons = item.get("review_reasons", [])
+        review_reasons = (
+            list(original_review_reasons)
+            if category == "non_emission" and isinstance(original_review_reasons, list)
+            else []
+        )
+        original_review_required = category == "non_emission" and item.get("review_required") is True
         calculation: dict[str, Any] | None = None
         calculation_reason: str | None = None
 
-        if not isinstance(category, str) or not category.strip() or category == "unknown":
+        if category == "non_emission":
+            calculation_reason = "Emission calculation is not applicable to this line item."
+        elif not isinstance(category, str) or not category.strip() or category == "unknown":
             calculation_reason = "Activity category is unknown or missing."
         elif quantity is None or not isinstance(unit, str) or not unit.strip():
             calculation_reason = "Activity quantity and unit are required for emission calculation."
@@ -202,9 +211,10 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
                 calculation_reason = "Emission calculation failed."
 
         if calculation is None:
-            all_calculated = False
-            review_reasons.append(calculation_reason or "Emission calculation was skipped.")
-            warnings.append(f"Line {index}: {review_reasons[-1]}")
+            if category != "non_emission":
+                all_calculated = False
+                review_reasons.append(calculation_reason or "Emission calculation was skipped.")
+                warnings.append(f"Line {index}: {review_reasons[-1]}")
         else:
             trust_metadata = calculation.get("trust_metadata", {})
             if (
@@ -223,14 +233,18 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
             review_reasons.append("AI confidence is low.")
 
         item["emission_calculation"] = calculation
-        item["calculation_status"] = "calculated" if calculation is not None else "skipped"
+        item["calculation_status"] = (
+            "not_applicable"
+            if category == "non_emission"
+            else "calculated" if calculation is not None else "skipped"
+        )
         item["calculation_reason"] = calculation_reason
-        item["review_required"] = bool(review_reasons)
+        item["review_required"] = original_review_required or bool(review_reasons)
         item["review_reasons"] = review_reasons
 
     result["processing_status"] = "completed"
     result["emission_calculation_status"] = (
-        "not_applicable" if not line_items else "complete" if all_calculated else "partial"
+        "not_applicable" if not emission_items else "complete" if all_calculated else "partial"
     )
 
 
@@ -242,7 +256,11 @@ def _uploaded_report(record: InvoiceRecord) -> dict[str, Any]:
 
     for item in line_items:
         calculation = item.get("emission_calculation")
-        if item.get("calculation_status") != "calculated" or not isinstance(calculation, dict):
+        if (
+            item.get("category") == "non_emission"
+            or item.get("calculation_status") != "calculated"
+            or not isinstance(calculation, dict)
+        ):
             continue
 
         emissions = calculation.get("emissions")
@@ -293,7 +311,8 @@ def _uploaded_report(record: InvoiceRecord) -> dict[str, Any]:
     for group in by_unit + by_category:
         group["total"] = round(group["total"], 3)
     valid_calculation_count = sum(group["successful_line_items"] for group in by_unit)
-    excluded_line_count = len(line_items) - valid_calculation_count
+    emission_line_count = sum(item.get("category") != "non_emission" for item in line_items)
+    excluded_line_count = emission_line_count - valid_calculation_count
 
     if len(by_unit) == 1:
         only_total = by_unit[0]
