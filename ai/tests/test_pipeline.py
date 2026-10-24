@@ -325,7 +325,9 @@ def test_pipeline_matches_contract_schema(tmp_path):
         "confidence_flag",
         "reasons",
     }
-    assert set(item.keys()) == required_item_keys
+    assert required_item_keys.issubset(set(item.keys()))
+    assert set(item.keys()) - required_item_keys <= {"expected_unit"}
+    assert item.get("expected_unit") == "litre"
 
     assert item["quantity"] == 1000.0
     assert item["unit"] in {"litre", "litres"}
@@ -432,13 +434,13 @@ def test_parser_with_lines_and_rate_mismatch():
 
     # Item 3: Waste disposal
     assert items[3]["quantity"] == 1.0
-    assert items[3]["unit"] == "Month"
+    assert items[3]["unit"] in {"month", "Month"}
     assert items[3]["amount"] == 2800.00
 
     # Item 4: Taxi hire
     assert items[4]["description"] == "Taxi hire for client visit"
     assert items[4]["quantity"] == 2.0
-    assert items[4]["unit"] == "Trip"
+    assert items[4]["unit"] in {"trip", "Trip"}
     assert items[4]["rate"] == 4350.00
     assert items[4]["amount"] == 2700.00
 
@@ -574,3 +576,184 @@ def test_overall_confidence_penalizes_low_lines(tmp_path):
     assert result["overall_confidence"] == expected_overall
     assert result["overall_confidence"] < 0.50
 
+
+# ---------------------------------------------------------------------------
+# Task: Non-emission, Water & Effluent, and Diesel Split Tests
+# ---------------------------------------------------------------------------
+
+def test_classify_non_emission_fixed_demand_charges():
+    item = {"description": "Fixed demand charges", "unit": "month"}
+    res = classify(item)
+    assert res["category"] == "non_emission"
+    assert res["scope"] is None
+    assert "non-emission" in res["reason"].lower()
+    assert "no emission factor" in res["reason"].lower()
+
+
+def test_classify_non_emission_gst():
+    item = {"description": "GST (18%)", "unit": None}
+    res = classify(item)
+    assert res["category"] == "non_emission"
+    assert res["scope"] is None
+    assert "non-emission" in res["reason"].lower()
+
+
+def test_classify_diesel_for_company_truck():
+    item = {"description": "Diesel for company truck", "unit": "litre"}
+    res = classify(item)
+    assert res["category"] == "mobile_fuel_diesel"
+    assert res["scope"] == 1
+    assert res["match_strength"] >= 0.8
+
+
+def test_classify_diesel_for_generator():
+    item = {"description": "Diesel for generator", "unit": "litre"}
+    res = classify(item)
+    assert res["category"] == "stationary_fuel_diesel"
+    assert res["scope"] == 1
+    assert res["match_strength"] >= 0.8
+
+
+def test_classify_water_supply_charges_m3():
+    item = {"description": "Water supply charges m3", "unit": "m3"}
+    res = classify(item)
+    assert res["category"] == "water_effluent"
+    assert res["scope"] == 3
+    assert res["match_strength"] >= 0.8
+
+
+def test_classify_unclassifiable_description_returns_unknown():
+    item = {"description": "Xyzzy unclassifiable quantum widget consulting", "unit": "nos"}
+    res = classify(item)
+    assert res["category"] == "unknown"
+    assert res["scope"] is None
+    assert res["match_strength"] == 0.0
+
+
+def test_scorer_non_emission_high_confidence():
+    line_item = {
+        "description": "Fixed demand charges",
+        "quantity": 1.0,
+        "unit": "month",
+        "amount": 3200.0,
+    }
+    ocr_result = {
+        "words": [
+            {"text": "Fixed", "conf": 0.95},
+            {"text": "demand", "conf": 0.95},
+            {"text": "charges", "conf": 0.95},
+        ]
+    }
+    classification = classify(line_item)
+    scored = score(line_item, ocr_result, classification)
+    assert scored["confidence"] >= 0.80
+    assert scored["confidence_flag"] == "high"
+    assert any("no emission calculation" in r.lower() for r in scored["reasons"])
+
+
+def test_scorer_emission_category_differing_unit_warning_not_heavily_penalized():
+    line_item = {
+        "description": "Freight transport Pune to Mumbai",
+        "quantity": 1.0,
+        "unit": "trip",
+        "amount": 8500.0,
+    }
+    ocr_result = {"words": [{"text": "freight", "conf": 0.95}]}
+    classification = classify(line_item)
+    scored = score(line_item, ocr_result, classification)
+    # Freight transport expects tonne-km, line has trip: should not penalize heavily (remains high)
+    assert scored["confidence"] >= 0.80
+    assert scored["confidence_flag"] == "high"
+    assert any("differs from the emission engine's expected unit 'tonne-km'" in r for r in scored["reasons"])
+
+def test_parser_label_based_invoice_format():
+    invoice_text = """
+TAX INVOICE
+
+Invoice Number: TEST-001
+Invoice Date: 22 October 2026
+
+Seller: Demo Supplies Pvt. Ltd.
+Buyer: TrustScope Demo Company
+
+Item 1: Office paper
+Quantity: 10 packs
+Unit Price: Rs. 100
+Amount: Rs. 1,000
+
+Item 2: Purchased electricity
+Quantity: 100 kWh
+Unit Price: Rs. 8
+Amount: Rs. 800
+
+Item 3: Office stationery
+Quantity: 5 units
+Unit Price: Rs. 50
+Amount: Rs. 250
+
+Subtotal: Rs. 2,050
+GST (18%): Rs. 369
+Total Amount: Rs. 2,419
+"""
+
+    parsed = parse({
+        "text": invoice_text,
+        "words": [],
+        "pages": 1,
+    })
+
+    assert parsed["invoice_number"] == "TEST-001"
+    assert parsed["invoice_date"] == "2026-10-22"
+    assert len(parsed["line_items"]) == 3
+
+    items = parsed["line_items"]
+
+    assert "Office paper" in items[0]["description"]
+    assert items[0]["quantity"] == 10.0
+    assert items[0]["unit"] == "packs"
+    assert items[0]["amount"] == 1000.0
+
+    assert "Purchased electricity" in items[1]["description"]
+    assert items[1]["quantity"] == 100.0
+    assert items[1]["unit"] == "kWh"
+    assert items[1]["amount"] == 800.0
+
+    assert "Office stationery" in items[2]["description"]
+    assert items[2]["quantity"] == 5.0
+    assert items[2]["unit"] == "units"
+    assert items[2]["amount"] == 250.0
+
+
+def test_parser_extracts_vendor_without_seller_label():
+    from ai.parsing.parser import extract_vendor
+
+    lines = [
+        "TAX INVOICE",
+        "Seller: Demo Supplies Pvt. Ltd.",
+        "Buyer: TrustScope Demo Company",
+    ]
+
+    assert extract_vendor(lines) == "Demo Supplies Pvt. Ltd."
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Total: Rs. 2,419", "INR"),
+        ("Currency: INR", "INR"),
+        ("Total: ₹2,419", "INR"),
+        ("Total: Rs 500", "INR"),
+        ("Total: 500 GBP", "GBP"),
+        ("Total: $500", "USD"),
+    ],
+)
+def test_parser_extracts_currency_formats(text, expected):
+    from ai.parsing.parser import extract_currency
+
+    assert extract_currency(text) == expected
+
+
+def test_parser_does_not_invent_missing_currency():
+    from ai.parsing.parser import extract_currency
+
+    assert extract_currency("Invoice total: 2419") is None

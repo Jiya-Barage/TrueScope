@@ -284,6 +284,11 @@ def test_upload_requires_exactly_one_file(monkeypatch):
     )
 
     class FormContext:
+        def __await__(self):
+            async def resolve():
+                return form
+            return resolve().__await__()
+
         async def __aenter__(self):
             return form
 
@@ -938,6 +943,9 @@ def test_new_emission_categories_skip_missing_factors_without_failing_invoice(mo
     assert line_item["calculation_reason"] == "No emission factor matches this category and unit."
     assert line_item["review_required"] is True
     assert calls == [(category, 100, "kWh")]
+
+
+
 
 
 def test_unverified_factor_requires_review(monkeypatch):
