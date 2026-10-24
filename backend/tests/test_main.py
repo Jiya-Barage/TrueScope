@@ -593,6 +593,17 @@ def test_uploaded_report_aggregates_only_successful_compatible_calculations():
                 "review_required": True,
                 "review_reasons": ["Activity category is unknown or missing."],
             },
+            {
+                **_line_item(category="non_emission", scope=None),
+                "emission_calculation": {
+                    "emissions": 900.0,
+                    "emissions_unit": "kg CO2e",
+                    "emissions_basis": "CO2e",
+                },
+                "calculation_status": "calculated",
+                "review_required": False,
+                "review_reasons": [],
+            },
         ]
     )
     result["invoice_id"] = invoice_id
@@ -609,7 +620,7 @@ def test_uploaded_report_aggregates_only_successful_compatible_calculations():
     report = response.json()
     total = report["totals"]["successful_calculation_total"]
     assert report["source"]["kind"] == "upload"
-    assert len(report["line_items"]) == 3
+    assert len(report["line_items"]) == 4
     assert report["warnings"] == ["Original AI warning"]
     assert report["review_warnings"] == [
         {"line_number": 2, "reasons": ["Emission factor verification is required."]},
@@ -932,6 +943,8 @@ def test_new_emission_categories_skip_missing_factors_without_failing_invoice(mo
     assert line_item["calculation_reason"] == "No emission factor matches this category and unit."
     assert line_item["review_required"] is True
     assert calls == [(category, 100, "kWh")]
+
+
 
 
 

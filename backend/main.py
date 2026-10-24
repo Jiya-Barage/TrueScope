@@ -8,9 +8,8 @@ from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, TypedDict
-from starlette.requests import Request
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -33,6 +32,7 @@ class DemoRequest(BaseModel):
 INVOICE_RECORDS: dict[str, InvoiceRecord] = {}
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+
 
 DEMO_RECORDS: dict[str, dict[str, Any]] = {
     "INV-2024-001": {
@@ -106,7 +106,10 @@ app.add_middleware(
 def _invoice_not_found() -> HTTPException:
     return HTTPException(
         status_code=404,
-        detail={"code": "invoice_not_found", "message": "Invoice not found."},
+        detail={
+            "code": "invoice_not_found",
+            "message": "Invoice not found.",
+        },
     )
 
 
@@ -139,12 +142,15 @@ def _is_invalid_document_error(error: Exception) -> bool:
     try:
         from pdf2image.exceptions import PDFPageCountError, PDFSyntaxError
 
-        invalid_document_types.extend((PDFPageCountError, PDFSyntaxError))
+        invalid_document_types.extend(
+            (PDFPageCountError, PDFSyntaxError)
+        )
     except ImportError:
         pass
 
     return bool(invalid_document_types) and isinstance(
-        error, tuple(invalid_document_types)
+        error,
+        tuple(invalid_document_types),
     )
 
 
@@ -155,8 +161,10 @@ def _load_emission_engine() -> Any:
         / "emission-engine"
         / "engine.py"
     )
+
     spec = importlib.util.spec_from_file_location(
-        "truescope_emission_engine", engine_path
+        "truescope_emission_engine",
+        engine_path,
     )
 
     if spec is None or spec.loader is None:
@@ -185,10 +193,14 @@ def _validate_ai_result(result: Any) -> None:
     line_items = result.get("line_items")
 
     if not isinstance(line_items, list):
-        raise TypeError("AI pipeline result must contain a line_items list.")
+        raise TypeError(
+            "AI pipeline result must contain a line_items list."
+        )
 
     if any(not isinstance(item, dict) for item in line_items):
-        raise TypeError("Each AI pipeline line item must be an object.")
+        raise TypeError(
+            "Each AI pipeline line item must be an object."
+        )
 
 
 def _enrich_emission_calculations(result: dict[str, Any]) -> None:
@@ -221,8 +233,8 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
             and item.get("review_required") is True
         )
 
-        calculation = None
-        calculation_reason = None
+        calculation: dict[str, Any] | None = None
+        calculation_reason: str | None = None
 
         if category == "non_emission":
             calculation_reason = (
@@ -233,18 +245,37 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
             or not category.strip()
             or category == "unknown"
         ):
-            calculation_reason = "Activity category is unknown or missing."
-        elif quantity is None or not isinstance(unit, str) or not unit.strip():
+            calculation_reason = (
+                "Activity category is unknown or missing."
+            )
+        elif (
+            quantity is None
+            or not isinstance(unit, str)
+            or not unit.strip()
+        ):
             calculation_reason = (
                 "Activity quantity and unit are required for emission calculation."
             )
-        elif isinstance(quantity, bool) or not isinstance(quantity, (int, float)):
+        elif isinstance(quantity, bool) or not isinstance(
+            quantity, (int, float)
+        ):
             calculation_reason = "Activity quantity is not numeric."
-        elif isinstance(quantity, float) and not math.isfinite(quantity):
+        elif not math.isfinite(quantity):
             calculation_reason = "Activity quantity must be finite."
         else:
             try:
-                calculation = _calculate_emissions(category, quantity, unit)
+                calculation = _calculate_emissions(
+                    category,
+                    quantity,
+                    unit,
+                )
+
+                if not isinstance(calculation, dict):
+                    calculation = None
+                    calculation_reason = (
+                        "The emission engine returned an invalid result."
+                    )
+
             except ValueError as exc:
                 if str(exc).startswith("No emission factor found"):
                     calculation_reason = (
@@ -261,11 +292,17 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
             if category != "non_emission":
                 all_calculated = False
                 review_reasons.append(
-                    calculation_reason or "Emission calculation was skipped."
+                    calculation_reason
+                    or "Emission calculation was skipped."
                 )
-                warnings.append(f"Line {index}: {review_reasons[-1]}")
+                warnings.append(
+                    f"Line {index}: {review_reasons[-1]}"
+                )
         else:
             trust_metadata = calculation.get("trust_metadata", {})
+
+            if not isinstance(trust_metadata, dict):
+                trust_metadata = {}
 
             if (
                 trust_metadata.get("verification_required")
@@ -359,7 +396,9 @@ def _uploaded_report(record: InvoiceRecord) -> dict[str, Any]:
         unit_total["successful_line_items"] += 1
 
         category = item.get("category")
-        category_label = category if isinstance(category, str) else "unknown"
+        category_label = (
+            category if isinstance(category, str) else "unknown"
+        )
         category_key = (
             category_label,
             emissions_basis,
@@ -387,7 +426,8 @@ def _uploaded_report(record: InvoiceRecord) -> dict[str, Any]:
         group["total"] = round(group["total"], 3)
 
     valid_calculation_count = sum(
-        group["successful_line_items"] for group in by_unit
+        group["successful_line_items"]
+        for group in by_unit
     )
 
     emission_line_count = sum(
@@ -450,7 +490,8 @@ def _uploaded_report(record: InvoiceRecord) -> dict[str, Any]:
             "reasons": list(item["review_reasons"]),
         }
         for index, item in enumerate(line_items, start=1)
-        if item.get("review_required") and item.get("review_reasons")
+        if item.get("review_required")
+        and item.get("review_reasons")
     ]
 
     return {
@@ -600,15 +641,16 @@ def load_demo_invoice(request: DemoRequest) -> dict[str, Any]:
     }
 
 
-
 @app.post("/api/invoices/upload")
-async def upload_invoice(
-    request: Request,
-) -> dict[str, Any]:
+async def upload_invoice(request: Request) -> dict[str, Any]:
     form = await request.form()
     uploaded_files = form.getlist("file")
 
-    if len(uploaded_files) != 1 or not hasattr(uploaded_files[0], "filename") or not hasattr(uploaded_files[0],"read"):
+    if (
+        len(uploaded_files) != 1
+        or not hasattr(uploaded_files[0], "filename")
+        or not hasattr(uploaded_files[0], "read")
+    ):
         raise HTTPException(
             status_code=422,
             detail={
@@ -786,7 +828,6 @@ async def upload_invoice(
     finally:
         if temporary_path is not None:
             Path(temporary_path).unlink(missing_ok=True)
-
 
 
 @app.get("/api/invoices/{invoice_id}/status")
