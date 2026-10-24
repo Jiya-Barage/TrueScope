@@ -153,34 +153,52 @@ IGNORE_HEADER_KEYWORDS = [
 ]
 
 
+
 def extract_vendor(lines: List[str]) -> Optional[str]:
-    """Extract vendor name from lines.
-
-    Finds first non-empty line that is not purely 'TAX INVOICE', removes trailing
-    'TAX INVOICE' if on same line, and leniently normalizes OCR'd 'Mis'/'M/s' prefix.
-
-    Args:
-        lines: List of text lines.
-
-    Returns:
-        Vendor name string or None if unidentifiable.
-    """
+    """Extract vendor name while removing common invoice labels."""
     for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
-        # Remove trailing "TAX INVOICE" or document header if on same line
-        v = re.sub(r"\s+tax\s+invoice\s*$", "", line, flags=re.IGNORECASE).strip()
-        cleaned_lower = re.sub(r"[^\w\s]", "", v).strip().lower()
-        if not cleaned_lower or cleaned_lower in {"tax invoice", "invoice", "receipt", "bill", "statement"}:
+
+        line = re.sub(r"\s+tax\s+invoice\s*$", "", line, flags=re.IGNORECASE).strip()
+
+        if re.match(
+            r"^(?:seller|vendor|supplier|issued\s+by|sold\s+by)\s*:",
+            line,
+            re.IGNORECASE,
+        ):
+            line = re.sub(
+                r"^(?:seller|vendor|supplier|issued\s+by|sold\s+by)\s*:\s*",
+                "",
+                line,
+                flags=re.IGNORECASE,
+            ).strip()
+
+        line = re.sub(
+            r"^(?:m/s|mis|ms|m\s*/\s*s|m\.\s*s\.?)\s+",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        cleaned_lower = re.sub(r"[^\w\s]", "", line).strip().lower()
+
+        if not cleaned_lower or cleaned_lower in {
+            "tax invoice", "invoice", "receipt", "bill", "statement",
+        }:
             continue
-        # Leniently normalize OCR'd "Mis", "M/s", "Ms" prefix
-        v = re.sub(r"^(?:m/s|mis|ms|m\s*/\s*s|m\.\s*s\.?)\s+", "", v, flags=re.IGNORECASE).strip()
-        # Skip if line looks like an invoice label or metadata
-        if re.match(r"^(?:invoice|date|bill to|ship to|to|from|currency)\b", v, re.IGNORECASE):
+
+        if re.match(
+            r"^(?:invoice|date|bill to|ship to|buyer|customer|to|from|currency)\b",
+            line,
+            re.IGNORECASE,
+        ):
             continue
-        if len(v) >= 2:
-            return v
+
+        if len(line) >= 2:
+            return line
+
     return None
 
 
@@ -253,22 +271,27 @@ def extract_invoice_number(text: str) -> Optional[str]:
     return None
 
 
+
 def extract_currency(text: str) -> Optional[str]:
-    """Extract 3-letter currency code from symbol or code in text.
+    """Extract a currency code from common currency symbols or labels."""
+    if re.search(r"\b(?:INR|Rs\.?|Rupees?)\b", text, re.IGNORECASE) or "₹" in text:
+        return "INR"
 
-    Args:
-        text: Raw OCR text.
+    if "£" in text or re.search(r"\bGBP\b", text, re.IGNORECASE):
+        return "GBP"
 
-    Returns:
-        3-letter currency code or None.
-    """
+    if "€" in text or re.search(r"\bEUR\b", text, re.IGNORECASE):
+        return "EUR"
+
+    if "$" in text or re.search(r"\bUSD\b", text, re.IGNORECASE):
+        return "USD"
+
+    if "¥" in text or re.search(r"\bJPY\b", text, re.IGNORECASE):
+        return "JPY"
+
     for code in CURRENCY_CODES:
-        if re.search(rf"\b{code}\b", text, re.IGNORECASE):
+        if re.search(rf"\b{re.escape(code)}\b", text, re.IGNORECASE):
             return code.upper()
-
-    for symbol, code in CURRENCY_SYMBOLS.items():
-        if symbol in text:
-            return code
 
     return None
 
@@ -317,7 +340,7 @@ def _parse_table_line(line: str) -> Optional[Dict[str, Any]]:
         Parsed line item dict or None if line does not match.
     """
     num_re = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\.?"
-    
+
     # 5 columns: desc, qty, unit, rate, amount
     pattern_5col = re.compile(
         rf"^(?P<desc>.+?)\s+(?P<qty>{num_re})\s+(?P<unit>[^\s0-9]+)\s+(?P<rate>{num_re})\s+(?P<amount>{num_re})\s*$"
@@ -456,6 +479,77 @@ def _parse_line_item(
     }
 
 
+def _parse_labeled_line_items(lines: List[str]) -> List[Dict[str, Any]]:
+    items = []
+    current = None
+
+    def save_item():
+        if current and current.get("description"):
+            if current.get("quantity") is not None or current.get("amount") is not None:
+                current.setdefault("rate", None)
+                current.setdefault("reasons", [])
+                items.append(current.copy())
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        item_match = re.match(r"^Item\s*\d*\s*:\s*(.+)$", line, re.IGNORECASE)
+        if item_match:
+            save_item()
+            current = {
+                "description": _clean_description(item_match.group(1)),
+                "quantity": None,
+                "unit": None,
+                "rate": None,
+                "amount": None,
+                "reasons": [],
+            }
+            continue
+
+        if current is None:
+            continue
+
+        quantity_match = re.match(
+            r"^Quantity\s*:\s*([\d,]+(?:\.\d+)?)\s*(.*?)\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        if quantity_match:
+            current["quantity"] = _clean_num(quantity_match.group(1))
+            raw_unit = quantity_match.group(2).strip().lower().rstrip(".")
+            if raw_unit:
+                current["unit"] = UNIT_ALIASES.get(
+                    raw_unit, KNOWN_UNITS.get(raw_unit, raw_unit)
+                )
+            continue
+
+        rate_match = re.match(
+            r"^(?:Unit\s+Price|Rate)\s*:\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        if rate_match:
+            current["rate"] = _clean_num(rate_match.group(1))
+            continue
+
+        amount_match = re.match(
+            r"^Amount\s*:\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        if amount_match:
+            current["amount"] = _clean_num(amount_match.group(1))
+            continue
+
+        if re.match(r"^(?:Subtotal|GST|Tax|Total|Amount Due)\b", line, re.IGNORECASE):
+            save_item()
+            current = None
+
+    save_item()
+    return items
+
 def parse(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
     """Parse raw OCR result into structured metadata and line items.
 
@@ -518,13 +612,28 @@ def parse(ocr_result: Dict[str, Any]) -> Dict[str, Any]:
                 line_items.append(parsed_item)
             else:
                 warnings.append(f"Skipped unrecognized line inside table region: '{line}'")
+
     else:
-        # Fallback for documents without explicit Description/Qty table header
-        for idx, line in enumerate(line_strings):
-            parsed_item = _parse_line_item(line, vendor=vendor, invoice_number=invoice_number)
-            if parsed_item:
-                parsed_item["line_conf"] = line_confs[idx] if idx < len(line_confs) else 0.85
-                line_items.append(parsed_item)
+        # First try the labeled invoice format.
+        line_items = _parse_labeled_line_items(line_strings)
+
+        if line_items:
+            for item in line_items:
+                item["line_conf"] = 0.85
+        else:
+            # Fallback for other documents without a table header.
+            for idx, line in enumerate(line_strings):
+                parsed_item = _parse_line_item(
+                    line,
+                    vendor=vendor,
+                    invoice_number=invoice_number,
+                )
+                if parsed_item:
+                    parsed_item["line_conf"] = (
+                        line_confs[idx] if idx < len(line_confs) else 0.85
+                    )
+                    line_items.append(parsed_item)
+
 
     return {
         "vendor": vendor,

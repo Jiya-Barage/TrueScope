@@ -666,3 +666,94 @@ def test_scorer_emission_category_differing_unit_warning_not_heavily_penalized()
     assert scored["confidence_flag"] == "high"
     assert any("differs from the emission engine's expected unit 'tonne-km'" in r for r in scored["reasons"])
 
+def test_parser_label_based_invoice_format():
+    invoice_text = """
+TAX INVOICE
+
+Invoice Number: TEST-001
+Invoice Date: 22 October 2026
+
+Seller: Demo Supplies Pvt. Ltd.
+Buyer: TrustScope Demo Company
+
+Item 1: Office paper
+Quantity: 10 packs
+Unit Price: Rs. 100
+Amount: Rs. 1,000
+
+Item 2: Purchased electricity
+Quantity: 100 kWh
+Unit Price: Rs. 8
+Amount: Rs. 800
+
+Item 3: Office stationery
+Quantity: 5 units
+Unit Price: Rs. 50
+Amount: Rs. 250
+
+Subtotal: Rs. 2,050
+GST (18%): Rs. 369
+Total Amount: Rs. 2,419
+"""
+
+    parsed = parse({
+        "text": invoice_text,
+        "words": [],
+        "pages": 1,
+    })
+
+    assert parsed["invoice_number"] == "TEST-001"
+    assert parsed["invoice_date"] == "2026-10-22"
+    assert len(parsed["line_items"]) == 3
+
+    items = parsed["line_items"]
+
+    assert "Office paper" in items[0]["description"]
+    assert items[0]["quantity"] == 10.0
+    assert items[0]["unit"] == "packs"
+    assert items[0]["amount"] == 1000.0
+
+    assert "Purchased electricity" in items[1]["description"]
+    assert items[1]["quantity"] == 100.0
+    assert items[1]["unit"] == "kWh"
+    assert items[1]["amount"] == 800.0
+
+    assert "Office stationery" in items[2]["description"]
+    assert items[2]["quantity"] == 5.0
+    assert items[2]["unit"] == "units"
+    assert items[2]["amount"] == 250.0
+
+
+def test_parser_extracts_vendor_without_seller_label():
+    from ai.parsing.parser import extract_vendor
+
+    lines = [
+        "TAX INVOICE",
+        "Seller: Demo Supplies Pvt. Ltd.",
+        "Buyer: TrustScope Demo Company",
+    ]
+
+    assert extract_vendor(lines) == "Demo Supplies Pvt. Ltd."
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Total: Rs. 2,419", "INR"),
+        ("Currency: INR", "INR"),
+        ("Total: ₹2,419", "INR"),
+        ("Total: Rs 500", "INR"),
+        ("Total: 500 GBP", "GBP"),
+        ("Total: $500", "USD"),
+    ],
+)
+def test_parser_extracts_currency_formats(text, expected):
+    from ai.parsing.parser import extract_currency
+
+    assert extract_currency(text) == expected
+
+
+def test_parser_does_not_invent_missing_currency():
+    from ai.parsing.parser import extract_currency
+
+    assert extract_currency("Invoice total: 2419") is None

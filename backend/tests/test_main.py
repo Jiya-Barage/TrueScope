@@ -1,4 +1,4 @@
-﻿import importlib.util
+import importlib.util
 import sys
 import os
 from io import BytesIO
@@ -284,6 +284,11 @@ def test_upload_requires_exactly_one_file(monkeypatch):
     )
 
     class FormContext:
+        def __await__(self):
+            async def resolve():
+                return form
+            return resolve().__await__()
+
         async def __aenter__(self):
             return form
 

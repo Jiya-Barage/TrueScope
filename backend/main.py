@@ -8,12 +8,12 @@ from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, TypedDict
+from starlette.requests import Request
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
-from starlette.datastructures import UploadFile
 
 
 InvoiceStatus = Literal["queued", "processing", "completed", "failed"]
@@ -600,189 +600,193 @@ def load_demo_invoice(request: DemoRequest) -> dict[str, Any]:
     }
 
 
+
 @app.post("/api/invoices/upload")
-async def upload_invoice(request: Request) -> dict[str, Any]:
-    async with request.form() as form:
-        uploaded_files = form.getlist("file")
+async def upload_invoice(
+    request: Request,
+) -> dict[str, Any]:
+    form = await request.form()
+    uploaded_files = form.getlist("file")
 
-        if (
-            len(uploaded_files) != 1
-            or not isinstance(uploaded_files[0], UploadFile)
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "file_required",
-                    "message": "Upload one invoice file in the 'file' field.",
-                },
-            )
-
-        uploaded_file = uploaded_files[0]
-
-        original_name = (
-            (uploaded_file.filename or "")
-            .replace("\\", "/")
-            .rsplit("/", 1)[-1]
+    if len(uploaded_files) != 1 or not hasattr(uploaded_files[0], "filename") or not hasattr(uploaded_files[0],"read"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "file_required",
+                "message": "Exactly one invoice file is required.",
+            },
         )
 
-        extension = Path(original_name).suffix.lower()
+    uploaded_file = uploaded_files[0]
 
-        if extension not in SUPPORTED_EXTENSIONS:
+    original_name = (
+        (uploaded_file.filename or "")
+        .replace("\\", "/")
+        .rsplit("/", 1)[-1]
+    )
+
+    extension = Path(original_name).suffix.lower()
+
+    if extension not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail={
+                "code": "unsupported_file_type",
+                "message": (
+                    "Supported invoice formats are PDF, PNG, JPG, and JPEG."
+                ),
+            },
+        )
+
+    temporary_path: str | None = None
+
+    try:
+        total_size = 0
+
+        with tempfile.NamedTemporaryFile(
+            suffix=extension,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = temporary_file.name
+
+            while chunk := await uploaded_file.read(64 * 1024):
+                total_size += len(chunk)
+
+                if total_size > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "code": "file_too_large",
+                            "message": (
+                                "Invoice files must be 10 MiB or smaller."
+                            ),
+                        },
+                    )
+
+                temporary_file.write(chunk)
+
+        if total_size == 0:
             raise HTTPException(
-                status_code=415,
+                status_code=400,
                 detail={
-                    "code": "unsupported_file_type",
-                    "message": (
-                        "Supported invoice formats are PDF, PNG, JPG, and JPEG."
-                    ),
+                    "code": "empty_file",
+                    "message": "The uploaded invoice file is empty.",
                 },
             )
 
-        temporary_path: str | None = None
+        invoice_id = f"inv_{uuid.uuid4().hex}"
+
+        source = {
+            "kind": "upload",
+            "label": "uploaded_invoice",
+            "filename": original_name,
+        }
+
+        INVOICE_RECORDS[invoice_id] = {
+            "status": "processing",
+            "result": None,
+            "error": None,
+            "source": source,
+        }
 
         try:
-            total_size = 0
-
-            with tempfile.NamedTemporaryFile(
-                suffix=extension,
-                delete=False,
-            ) as temporary_file:
-                temporary_path = temporary_file.name
-
-                while chunk := await uploaded_file.read(64 * 1024):
-                    total_size += len(chunk)
-
-                    if total_size > MAX_UPLOAD_SIZE_BYTES:
-                        raise HTTPException(
-                            status_code=413,
-                            detail={
-                                "code": "file_too_large",
-                                "message": (
-                                    "Invoice files must be 10 MiB or smaller."
-                                ),
-                            },
-                        )
-
-                    temporary_file.write(chunk)
-
-            if total_size == 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "code": "empty_file",
-                        "message": "The uploaded invoice file is empty.",
-                    },
-                )
-
-            invoice_id = f"inv_{uuid.uuid4().hex}"
-
-            source = {
-                "kind": "upload",
-                "label": "uploaded_invoice",
-                "filename": original_name,
-            }
-
+            result = await run_in_threadpool(
+                _run_ai_pipeline,
+                temporary_path,
+                invoice_id,
+            )
+        except (FileNotFoundError, ValueError):
             INVOICE_RECORDS[invoice_id] = {
-                "status": "processing",
+                "status": "failed",
                 "result": None,
-                "error": None,
+                "error": {
+                    "code": "invalid_invoice_file",
+                    "message": (
+                        "The invoice file could not be processed. "
+                        "Check that it is a valid supported document."
+                    ),
+                },
                 "source": source,
             }
 
-            try:
-                result = await run_in_threadpool(
-                    _run_ai_pipeline,
-                    temporary_path,
-                    invoice_id,
-                )
-            except (FileNotFoundError, ValueError):
-                INVOICE_RECORDS[invoice_id] = {
-                    "status": "failed",
-                    "result": None,
-                    "error": {
-                        "code": "invalid_invoice_file",
-                        "message": (
-                            "The invoice file could not be processed. "
-                            "Check that it is a valid supported document."
-                        ),
-                    },
-                    "source": source,
+            raise HTTPException(
+                status_code=422,
+                detail=INVOICE_RECORDS[invoice_id]["error"],
+            ) from None
+        except Exception as exc:
+            print("AI PIPELINE ERROR:", repr(exc))
+            is_invalid_document = _is_invalid_document_error(exc)
+
+            error = (
+                {
+                    "code": "invalid_invoice_file",
+                    "message": "The invoice file is invalid or corrupt.",
                 }
-
-                raise HTTPException(
-                    status_code=422,
-                    detail=INVOICE_RECORDS[invoice_id]["error"],
-                ) from None
-            except Exception as exc:
-                is_invalid_document = _is_invalid_document_error(exc)
-
-                error = (
-                    {
-                        "code": "invalid_invoice_file",
-                        "message": "The invoice file is invalid or corrupt.",
-                    }
-                    if is_invalid_document
-                    else {
-                        "code": "processing_failed",
-                        "message": "Invoice processing failed.",
-                    }
-                )
-
-                status_code = 422 if is_invalid_document else 500
-
-                INVOICE_RECORDS[invoice_id] = {
-                    "status": "failed",
-                    "result": None,
-                    "error": error,
-                    "source": source,
+                if is_invalid_document
+                else {
+                    "code": "processing_failed",
+                    "message": "Invoice processing failed.",
                 }
+            )
 
-                raise HTTPException(
-                    status_code=status_code,
-                    detail=INVOICE_RECORDS[invoice_id]["error"],
-                ) from None
-
-            try:
-                _validate_ai_result(result)
-                result["source_file"] = original_name
-                result["source"] = source
-
-                await run_in_threadpool(
-                    _enrich_emission_calculations,
-                    result,
-                )
-            except Exception:
-                INVOICE_RECORDS[invoice_id] = {
-                    "status": "failed",
-                    "result": None,
-                    "error": {
-                        "code": "processing_failed",
-                        "message": "Invoice processing failed.",
-                    },
-                    "source": source,
-                }
-
-                raise HTTPException(
-                    status_code=500,
-                    detail=INVOICE_RECORDS[invoice_id]["error"],
-                ) from None
+            status_code = 422 if is_invalid_document else 500
 
             INVOICE_RECORDS[invoice_id] = {
-                "status": "completed",
-                "result": result,
-                "error": None,
+                "status": "failed",
+                "result": None,
+                "error": error,
                 "source": source,
             }
 
-            return {
-                "invoice_id": invoice_id,
-                "status": "completed",
-                "result": result,
+            raise HTTPException(
+                status_code=status_code,
+                detail=INVOICE_RECORDS[invoice_id]["error"],
+            ) from None
+
+        try:
+            _validate_ai_result(result)
+            result["source_file"] = original_name
+            result["source"] = source
+
+            await run_in_threadpool(
+                _enrich_emission_calculations,
+                result,
+            )
+        except Exception as exc:
+            print("UPLOAD PROCESSING ERROR:", repr(exc))
+
+            INVOICE_RECORDS[invoice_id] = {
+                "status": "failed",
+                "result": None,
+                "error": {
+                    "code": "processing_failed",
+                    "message": "Invoice processing failed.",
+                },
+                "source": source,
             }
 
-        finally:
-            if temporary_path is not None:
-                Path(temporary_path).unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=500,
+                detail=INVOICE_RECORDS[invoice_id]["error"],
+            ) from None
+
+        INVOICE_RECORDS[invoice_id] = {
+            "status": "completed",
+            "result": result,
+            "error": None,
+            "source": source,
+        }
+
+        return {
+            "invoice_id": invoice_id,
+            "status": "completed",
+            "result": result,
+        }
+
+    finally:
+        if temporary_path is not None:
+            Path(temporary_path).unlink(missing_ok=True)
+
 
 
 @app.get("/api/invoices/{invoice_id}/status")
