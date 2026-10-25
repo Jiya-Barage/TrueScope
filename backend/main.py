@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from backend import storage
+
 
 InvoiceStatus = Literal["queued", "processing", "completed", "failed"]
 
@@ -97,7 +99,8 @@ app = FastAPI(title="TrueScope API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
-    allow_methods=["GET", "POST"],
+    allow_origin_regex=r"^http://(?:localhost|127\.0\.0\.1):517[3-9]$",
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Accept", "Content-Type"],
     allow_credentials=False,
 )
@@ -111,6 +114,23 @@ def _invoice_not_found() -> HTTPException:
             "message": "Invoice not found.",
         },
     )
+
+
+def _save_invoice_record(
+    invoice_id: str,
+    record: InvoiceRecord,
+) -> None:
+    storage.save_invoice(invoice_id, record)
+    INVOICE_RECORDS[invoice_id] = record
+
+
+def _get_invoice_record(invoice_id: str) -> InvoiceRecord | None:
+    record = INVOICE_RECORDS.get(invoice_id)
+    if record is None:
+        record = storage.get_invoice(invoice_id)
+        if record is not None:
+            INVOICE_RECORDS[invoice_id] = record
+    return record
 
 
 def _run_ai_pipeline(path: str, invoice_id: str) -> dict[str, Any]:
@@ -202,10 +222,96 @@ def _validate_ai_result(result: Any) -> None:
             "Each AI pipeline line item must be an object."
         )
 
+    warnings = result.get("warnings", [])
+    if warnings is None:
+        result["warnings"] = []
+    elif not isinstance(warnings, list):
+        result["warnings"] = [] if warnings == "" else [warnings]
+    else:
+        result["warnings"] = warnings
+
+    warnings = [
+        warning if isinstance(warning, str) else str(warning)
+        for warning in result["warnings"]
+    ]
+    result["warnings"] = warnings
+    for index, item in enumerate(line_items, start=1):
+        category = item.get("category")
+        if not isinstance(category, str) or not category.strip():
+            item["category"] = "unknown"
+            warnings.append(
+                f"Line {index}: Invalid or missing activity category requires review."
+            )
+
+        unit = item.get("unit")
+        if unit is not None and (
+            not isinstance(unit, str) or not unit.strip()
+        ):
+            item["unit"] = None
+            warnings.append(
+                f"Line {index}: Invalid activity unit was omitted."
+            )
+
+        scope = item.get("scope")
+        if scope is not None and (
+            isinstance(scope, bool)
+            or not isinstance(scope, int)
+            or scope not in {1, 2, 3}
+        ):
+            item["scope"] = None
+            warnings.append(
+                f"Line {index}: Invalid scope value was omitted."
+            )
+
+        quantity = item.get("quantity")
+        if isinstance(quantity, bool) or (
+            quantity is not None
+            and not isinstance(quantity, (int, float))
+        ):
+            item["quantity"] = None
+            warnings.append(
+                f"Line {index}: Invalid activity quantity was omitted."
+            )
+            quantity = None
+
+        if isinstance(quantity, float) and not math.isfinite(quantity):
+            item["quantity"] = None
+            warnings.append(
+                f"Line {index}: Non-finite activity quantity was omitted."
+            )
+
+        for field in ("amount", "confidence"):
+            value = item.get(field)
+            if isinstance(value, float) and not math.isfinite(value):
+                item[field] = None
+                warnings.append(
+                    f"Line {index}: Non-finite {field} value was omitted."
+                )
+
+        confidence = item.get("confidence")
+        if (
+            confidence is not None
+            and (
+                isinstance(confidence, bool)
+                or not isinstance(confidence, (int, float))
+                or not 0 <= confidence <= 1
+            )
+        ):
+            item["confidence"] = None
+            item["confidence_flag"] = "low"
+            warnings.append(
+                f"Line {index}: Invalid confidence value requires review."
+            )
+
 
 def _enrich_emission_calculations(result: dict[str, Any]) -> None:
     line_items = result.get("line_items", [])
-    warnings = result.setdefault("warnings", [])
+    warnings = result.get("warnings", [])
+    if warnings is None:
+        warnings = []
+    elif not isinstance(warnings, list):
+        warnings = [] if warnings == "" else [warnings]
+    result["warnings"] = warnings
 
     emission_items = [
         item
@@ -221,17 +327,25 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
         unit = item.get("unit")
 
         existing_reasons = item.get("review_reasons", [])
-        review_reasons = (
-            list(existing_reasons)
-            if category == "non_emission"
-            and isinstance(existing_reasons, list)
-            else []
-        )
+        if category == "non_emission" and isinstance(existing_reasons, (list, tuple)):
+            review_reasons = list(existing_reasons)
+        elif category == "non_emission" and isinstance(existing_reasons, str):
+            review_reasons = [existing_reasons]
+        else:
+            review_reasons = []
 
         original_review_required = (
             category == "non_emission"
             and item.get("review_required") is True
         )
+
+        description = item.get("description")
+        if not isinstance(description, str) or not description.strip():
+            item["description"] = "Description unavailable"
+            review_reasons.append("Line-item description is missing or invalid.")
+            warnings.append(
+                f"Line {index}: Description is missing or invalid; review required."
+            )
 
         calculation: dict[str, Any] | None = None
         calculation_reason: str | None = None
@@ -270,7 +384,31 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
                     unit,
                 )
 
-                if not isinstance(calculation, dict):
+                emission_value = (
+                    calculation.get("emissions")
+                    if isinstance(calculation, dict)
+                    else None
+                )
+                emissions_basis = (
+                    calculation.get("emissions_basis")
+                    if isinstance(calculation, dict)
+                    else None
+                )
+                emissions_unit = (
+                    calculation.get("emissions_unit")
+                    if isinstance(calculation, dict)
+                    else None
+                )
+
+                if (
+                    not isinstance(calculation, dict)
+                    or isinstance(emission_value, bool)
+                    or not isinstance(emission_value, (int, float))
+                    or not math.isfinite(emission_value)
+                    or emission_value < 0
+                    or emissions_basis not in {"CO2", "CO2e", "unspecified"}
+                    or emissions_unit != f"kg {emissions_basis}"
+                ):
                     calculation = None
                     calculation_reason = (
                         "The emission engine returned an invalid result."
@@ -497,6 +635,9 @@ def _uploaded_report(record: InvoiceRecord) -> dict[str, Any]:
     return {
         "invoice_id": result.get("invoice_id"),
         "processing_status": record["status"],
+        "emission_calculation_status": result.get(
+            "emission_calculation_status"
+        ),
         "source": record.get("source", result.get("source")),
         "invoice": {
             key: result.get(key)
@@ -554,6 +695,9 @@ def _demo_report(record: InvoiceRecord) -> dict[str, Any]:
     return {
         "invoice_id": result.get("invoice_id"),
         "processing_status": record["status"],
+        "emission_calculation_status": result.get(
+            "emission_calculation_status"
+        ),
         "source": record.get("source", result.get("source")),
         "invoice": {
             key: result.get(key)
@@ -592,6 +736,23 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/invoices")
+def list_invoices() -> dict[str, list[dict[str, Any]]]:
+    invoices = []
+    for invoice_id, record in storage.list_invoices():
+        INVOICE_RECORDS[invoice_id] = record
+        invoices.append(
+            {
+                "invoice_id": invoice_id,
+                "status": record["status"],
+                "result": record["result"],
+                "error": record["error"],
+                "source": record["source"],
+            }
+        )
+    return {"invoices": invoices}
+
+
 @app.post("/api/invoices/demo")
 def load_demo_invoice(request: DemoRequest) -> dict[str, Any]:
     demo_record = DEMO_RECORDS.get(request.demo_id)
@@ -627,18 +788,31 @@ def load_demo_invoice(request: DemoRequest) -> dict[str, Any]:
         }
     )
 
-    INVOICE_RECORDS[invoice_id] = {
-        "status": "completed",
-        "result": result,
-        "error": None,
-        "source": result["source"],
-    }
+    _save_invoice_record(
+        invoice_id,
+        {
+            "status": "completed",
+            "result": result,
+            "error": None,
+            "source": result["source"],
+        },
+    )
 
     return {
         "invoice_id": invoice_id,
         "status": "completed",
         "result": result,
     }
+
+
+@app.delete("/api/invoices/{invoice_id}")
+def delete_invoice(invoice_id: str) -> dict[str, str]:
+    if _get_invoice_record(invoice_id) is None:
+        raise _invoice_not_found()
+
+    storage.delete_invoice(invoice_id)
+    INVOICE_RECORDS.pop(invoice_id, None)
+    return {"invoice_id": invoice_id, "status": "deleted"}
 
 
 @app.post("/api/invoices/upload")
@@ -724,12 +898,15 @@ async def upload_invoice(request: Request) -> dict[str, Any]:
             "filename": original_name,
         }
 
-        INVOICE_RECORDS[invoice_id] = {
-            "status": "processing",
-            "result": None,
-            "error": None,
-            "source": source,
-        }
+        _save_invoice_record(
+            invoice_id,
+            {
+                "status": "processing",
+                "result": None,
+                "error": None,
+                "source": source,
+            },
+        )
 
         try:
             result = await run_in_threadpool(
@@ -738,22 +915,25 @@ async def upload_invoice(request: Request) -> dict[str, Any]:
                 invoice_id,
             )
         except (FileNotFoundError, ValueError):
-            INVOICE_RECORDS[invoice_id] = {
-                "status": "failed",
-                "result": None,
-                "error": {
-                    "code": "invalid_invoice_file",
-                    "message": (
-                        "The invoice file could not be processed. "
-                        "Check that it is a valid supported document."
-                    ),
+            _save_invoice_record(
+                invoice_id,
+                {
+                    "status": "failed",
+                    "result": None,
+                    "error": {
+                        "code": "invalid_invoice_file",
+                        "message": (
+                            "The invoice file could not be processed. "
+                            "Check that it is a valid supported document."
+                        ),
+                    },
+                    "source": source,
                 },
-                "source": source,
-            }
+            )
 
             raise HTTPException(
                 status_code=422,
-                detail=INVOICE_RECORDS[invoice_id]["error"],
+                detail=_get_invoice_record(invoice_id)["error"],
             ) from None
         except Exception as exc:
             print("AI PIPELINE ERROR:", repr(exc))
@@ -773,16 +953,19 @@ async def upload_invoice(request: Request) -> dict[str, Any]:
 
             status_code = 422 if is_invalid_document else 500
 
-            INVOICE_RECORDS[invoice_id] = {
-                "status": "failed",
-                "result": None,
-                "error": error,
-                "source": source,
-            }
+            _save_invoice_record(
+                invoice_id,
+                {
+                    "status": "failed",
+                    "result": None,
+                    "error": error,
+                    "source": source,
+                },
+            )
 
             raise HTTPException(
                 status_code=status_code,
-                detail=INVOICE_RECORDS[invoice_id]["error"],
+                detail=_get_invoice_record(invoice_id)["error"],
             ) from None
 
         try:
@@ -797,27 +980,33 @@ async def upload_invoice(request: Request) -> dict[str, Any]:
         except Exception as exc:
             print("UPLOAD PROCESSING ERROR:", repr(exc))
 
-            INVOICE_RECORDS[invoice_id] = {
-                "status": "failed",
-                "result": None,
-                "error": {
-                    "code": "processing_failed",
-                    "message": "Invoice processing failed.",
+            _save_invoice_record(
+                invoice_id,
+                {
+                    "status": "failed",
+                    "result": None,
+                    "error": {
+                        "code": "processing_failed",
+                        "message": "Invoice processing failed.",
+                    },
+                    "source": source,
                 },
-                "source": source,
-            }
+            )
 
             raise HTTPException(
                 status_code=500,
-                detail=INVOICE_RECORDS[invoice_id]["error"],
+                detail=_get_invoice_record(invoice_id)["error"],
             ) from None
 
-        INVOICE_RECORDS[invoice_id] = {
-            "status": "completed",
-            "result": result,
-            "error": None,
-            "source": source,
-        }
+        _save_invoice_record(
+            invoice_id,
+            {
+                "status": "completed",
+                "result": result,
+                "error": None,
+                "source": source,
+            },
+        )
 
         return {
             "invoice_id": invoice_id,
@@ -832,7 +1021,7 @@ async def upload_invoice(request: Request) -> dict[str, Any]:
 
 @app.get("/api/invoices/{invoice_id}/status")
 def get_invoice_status(invoice_id: str) -> dict[str, Any]:
-    record = INVOICE_RECORDS.get(invoice_id)
+    record = _get_invoice_record(invoice_id)
 
     if record is None:
         raise _invoice_not_found()
@@ -847,7 +1036,7 @@ def get_invoice_status(invoice_id: str) -> dict[str, Any]:
 
 @app.get("/api/invoices/{invoice_id}/results")
 def get_invoice_results(invoice_id: str) -> dict[str, Any]:
-    record = INVOICE_RECORDS.get(invoice_id)
+    record = _get_invoice_record(invoice_id)
 
     if record is None:
         raise _invoice_not_found()
@@ -868,7 +1057,7 @@ def get_invoice_results(invoice_id: str) -> dict[str, Any]:
 
 @app.get("/api/invoices/{invoice_id}/report")
 def get_invoice_report(invoice_id: str) -> dict[str, Any]:
-    record = INVOICE_RECORDS.get(invoice_id)
+    record = _get_invoice_record(invoice_id)
 
     if record is None:
         raise _invoice_not_found()

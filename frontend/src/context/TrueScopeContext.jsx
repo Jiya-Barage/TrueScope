@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useMemo } from 'react';
+import { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import {
   INITIAL_COMPANY,
   INITIAL_INVOICES,
@@ -7,6 +7,8 @@ import {
   NOTIFICATIONS,
 } from '../data/mockData';
 import { adaptUploadedInvoice } from '../utils/invoiceAdapter';
+import { apiRequest } from '../services/api';
+import { calculateInvoiceStats } from '../utils/reportMetrics';
 
 const TrueScopeContext = createContext(null);
 
@@ -14,6 +16,7 @@ export function TrueScopeProvider({ children }) {
   const [activeScreen, setActiveScreen] = useState('overview');
   const [company, setCompany] = useState(INITIAL_COMPANY);
   const [invoices, setInvoices] = useState(INITIAL_INVOICES);
+  const [backendLoadError, setBackendLoadError] = useState('');
   const [notifications, setNotifications] = useState(NOTIFICATIONS);
 
   // Modals state
@@ -25,74 +28,44 @@ export function TrueScopeProvider({ children }) {
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [selectedScopeFilter, setSelectedScopeFilter] = useState('all');
 
-  // Computed metrics
-  const stats = useMemo(() => {
-    let scope1 = 0;
-    let scope2 = 0;
-    let scope3 = 0;
-    let totalConfidence = 0;
-    let confidenceCount = 0;
+  useEffect(() => {
+    let isMounted = true;
 
-    const categoryMap = {};
+    apiRequest('/api/invoices')
+      .then((response) => {
+        if (!isMounted) return;
+        setBackendLoadError('');
+        const restoredInvoices = Array.isArray(response?.invoices)
+          ? response.invoices.flatMap(adaptUploadedInvoice)
+          : [];
+        setInvoices((previous) => {
+          const existingIds = new Set(previous.map((invoice) => invoice.id));
+          return [
+            ...restoredInvoices.filter((invoice) => !existingIds.has(invoice.id)),
+            ...previous,
+          ];
+        });
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setBackendLoadError(
+            error instanceof Error
+              ? error.message
+              : 'Could not restore saved invoices from the backend.',
+          );
+        }
+      });
 
-    invoices.forEach((inv) => {
-      const canAggregateAsCo2e =
-        !inv.isBackendUpload ||
-        (inv.emissionsBasis === 'CO2e' && inv.emissionsUnit === 'kg CO2e');
-      const em = canAggregateAsCo2e ? Number(inv.calculatedEmissionsKg) || 0 : 0;
-      if (inv.scope === 'Scope 1') scope1 += em;
-      else if (inv.scope === 'Scope 2') scope2 += em;
-      else if (inv.scope === 'Scope 3') scope3 += em;
-
-      if (typeof inv.confidence === 'number' && Number.isFinite(inv.confidence)) {
-        totalConfidence += inv.confidence;
-        confidenceCount += 1;
-      }
-
-      const cat = inv.activityCategory || 'Other';
-      if (canAggregateAsCo2e && !categoryMap[cat]) {
-        categoryMap[cat] = {
-          category: cat,
-          emissions: 0,
-          scope: inv.scope,
-          color: CATEGORY_COLORS[cat] || '#64748b',
-          invoiceIds: new Set(),
-        };
-      }
-      if (canAggregateAsCo2e) {
-        categoryMap[cat].emissions += em;
-        categoryMap[cat].invoiceIds.add(inv.backendInvoiceId || inv.id);
-      }
-    });
-
-    const totalEmissionsKg = scope1 + scope2 + scope3;
-
-    // Convert category map to sorted array with percentages
-    const categoryBreakdown = Object.values(categoryMap)
-      .map(({ invoiceIds, ...item }) => ({
-        ...item,
-        count: invoiceIds.size,
-        percentage: totalEmissionsKg > 0 ? (item.emissions / totalEmissionsKg) * 100 : 0,
-      }))
-      .sort((a, b) => b.emissions - a.emissions);
-
-    const averageConfidence = confidenceCount > 0
-      ? Math.round(totalConfidence / confidenceCount)
-      : 0;
-
-    return {
-      totalEmissionsKg,
-      scope1Kg: scope1,
-      scope2Kg: scope2,
-      scope3Kg: scope3,
-      scope1Pct: totalEmissionsKg > 0 ? (scope1 / totalEmissionsKg) * 100 : 0,
-      scope2Pct: totalEmissionsKg > 0 ? (scope2 / totalEmissionsKg) * 100 : 0,
-      scope3Pct: totalEmissionsKg > 0 ? (scope3 / totalEmissionsKg) * 100 : 0,
-      invoiceCount: new Set(invoices.map((inv) => inv.backendInvoiceId || inv.id)).size,
-      averageConfidence,
-      categoryBreakdown,
+    return () => {
+      isMounted = false;
     };
-  }, [invoices]);
+  }, []);
+
+  // Computed metrics
+  const stats = useMemo(
+    () => calculateInvoiceStats(invoices, CATEGORY_COLORS),
+    [invoices],
+  );
 
   // Add newly simulated invoice
   const addInvoice = (newInv) => {
@@ -133,9 +106,16 @@ export function TrueScopeProvider({ children }) {
   };
 
   // Delete invoice
-  const deleteInvoice = (id) => {
+  const deleteInvoice = async (id) => {
     const invoiceToDelete = invoices.find((invoice) => invoice.id === id);
     const backendInvoiceId = invoiceToDelete?.backendInvoiceId;
+
+    if (backendInvoiceId) {
+      await apiRequest(`/api/invoices/${encodeURIComponent(backendInvoiceId)}`, {
+        method: 'DELETE',
+      });
+    }
+
     setInvoices((prev) => prev.filter((inv) =>
       backendInvoiceId ? inv.backendInvoiceId !== backendInvoiceId : inv.id !== id
     ));
@@ -186,6 +166,7 @@ export function TrueScopeProvider({ children }) {
     company,
     setCompany,
     invoices,
+    backendLoadError,
     stats,
     monthlyTrends: MONTHLY_TREND_DATA,
     notifications,

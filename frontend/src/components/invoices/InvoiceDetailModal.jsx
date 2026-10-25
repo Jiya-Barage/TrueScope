@@ -28,6 +28,7 @@ export const InvoiceDetailModal = () => {
   const [editableQuantity, setEditableQuantity] = useState(0);
   const [editableFactor, setEditableFactor] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   if (!selectedInvoice) return null;
   const isBackendUpload = Boolean(selectedInvoice.isBackendUpload);
@@ -67,9 +68,16 @@ export const InvoiceDetailModal = () => {
     setIsEditing(false);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (window.confirm(`Delete ${selectedInvoice.invoiceNumber}?`)) {
-      deleteInvoice(selectedInvoice.id);
+      setDeleteError('');
+      try {
+        await deleteInvoice(selectedInvoice.id);
+      } catch (error) {
+        setDeleteError(
+          error instanceof Error ? error.message : 'Could not delete this invoice.',
+        );
+      }
     }
   };
 
@@ -137,6 +145,7 @@ export const InvoiceDetailModal = () => {
       }
     >
       <div className="invoice-detail-content">
+        {deleteError && <div className="error-banner" role="alert">{deleteError}</div>}
         {/* Top Summary Banner */}
         <div className="detail-hero-card">
           <div className="detail-hero-top">
@@ -234,12 +243,52 @@ export const InvoiceDetailModal = () => {
                       {selectedInvoice.emissionFactorNote}
                     </span>
                   )}
+                  {selectedInvoice.emissionCalculation && (
+                    <span className="factor-note-pill">
+                      {selectedInvoice.emissionFactorVerified
+                        ? 'Verified'
+                        : 'Unverified — review required'}
+                    </span>
+                  )}
+                  {selectedInvoice.emissionFactorGeography && (
+                    <span className="factor-note-pill">
+                      Geography: {selectedInvoice.emissionFactorGeography}
+                    </span>
+                  )}
+                  {!selectedInvoice.emissionFactorGeography && (
+                    <span className="factor-note-pill">
+                      Geography not established
+                      {selectedInvoice.emissionFactorLibraryDefaultGeography
+                        ? ` (library default: ${selectedInvoice.emissionFactorLibraryDefaultGeography})`
+                        : ''}
+                    </span>
+                  )}
                   {selectedInvoice.emissionFactorSource && (
                     <span className="factor-note-pill">
                       Source: {selectedInvoice.emissionFactorSource}
                       {selectedInvoice.emissionFactorSourceYear
                         ? ` (${selectedInvoice.emissionFactorSourceYear})`
                         : ''}
+                    </span>
+                  )}
+                  {selectedInvoice.emissionFactorProvenance && (
+                    <span className="factor-note-pill">
+                      Activity boundary:{' '}
+                      {selectedInvoice.emissionFactorProvenance.activity_boundary ||
+                        'Not documented'}
+                    </span>
+                  )}
+                  {selectedInvoice.emissionFactorProvenance && (
+                    <span className="factor-note-pill">
+                      Method:{' '}
+                      {selectedInvoice.emissionFactorProvenance.method ||
+                        'Not documented'}
+                    </span>
+                  )}
+                  {selectedInvoice.emissionFactorProvenance?.rationale && (
+                    <span className="factor-note-pill">
+                      Provenance limitation:{' '}
+                      {selectedInvoice.emissionFactorProvenance.rationale}
                     </span>
                   )}
                 </div>
@@ -294,6 +343,32 @@ export const InvoiceDetailModal = () => {
           </h4>
 
           <div className="metadata-table-card">
+            {isBackendUpload && (
+              <>
+                <div className="meta-row">
+                  <span className="meta-name">Invoice emission calculations</span>
+                  <span className="meta-value">
+                    {selectedInvoice.emissionCalculationStatus === 'partial'
+                      ? 'Partial — review required'
+                      : selectedInvoice.emissionCalculationStatus === 'complete'
+                        ? 'Complete'
+                        : selectedInvoice.emissionCalculationStatus === 'not_applicable'
+                          ? 'Not applicable'
+                          : 'Unavailable'}
+                  </span>
+                </div>
+                <div className="meta-row">
+                  <span className="meta-name">This line calculation</span>
+                  <span className="meta-value">
+                    {selectedInvoice.calculationStatus === 'calculated'
+                      ? 'Calculated'
+                      : selectedInvoice.calculationStatus === 'not_applicable'
+                        ? 'Not applicable'
+                        : 'Skipped'}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="meta-row">
               <span className="meta-name">Invoice Date</span>
               <span className="meta-value">{formatDate(selectedInvoice.date)}</span>

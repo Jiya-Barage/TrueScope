@@ -12,7 +12,8 @@
         "electricity_reference_year": "2024-25",
         "electricity_reference_value": 0.710,
         "electricity_reference_unit": "kg CO2/kWh",
-        "electricity_reference_note": "NITI Aayog report, Annexure E. Reference benchmark only; confirm suitability for the intended reporting methodology before adopting it.",
+        "electricity_reference_status": "unverified_legacy_metadata",
+        "electricity_reference_note": "Legacy library claim only. The CEA reference, NITI Aayog alternative, cited factor value, and 2024-25 period have not been reconciled against accessible source content.",
         "international_reference": "https://www.gov.uk/government/collections/government-conversion-factors-for-company-reporting",
         "factor_verification_required": true
     },
@@ -24,8 +25,19 @@
             "factor": 0.710,
             "factor_unit": "kg CO2/kWh",
             "source": "https://www.niti.gov.in/sites/default/files/2026-02/Scenarios-Towards-Viksit-Bharat-and-Net-Zero-Sectoral-Insights-Power.pdf",
-            "source_year": 2025,
-            "verification_status": "unverified_demo_value"
+            "source_year": null,
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "The cited PDF could not be inspected to substantiate this value, geography, method, or applicability. The prior factor record claimed source year 2025 while library metadata claimed 2024-25; neither period could be confirmed, so source_year is unset pending evidence."
+            }
         },
         {
             "category": "Fleet Diesel",
@@ -35,7 +47,18 @@
             "factor_unit": "kg CO2e/Litre",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, fuel specification, geography, reference year, or combustion/upstream boundary is recorded."
+            }
         },
         {
             "category": "natural_gas",
@@ -45,7 +68,18 @@
             "factor_unit": "kg CO2e/kWh",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, natural-gas specification, geography, reference year, or combustion/upstream boundary is recorded."
+            }
         },
         {
             "category": "freight_transport",
@@ -55,7 +89,18 @@
             "factor_unit": "kg CO2e/tonne-km",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, freight mode/vehicle boundary, geography, reference year, or tonne-kilometre methodology is recorded."
+            }
         },
         {
             "category": "waste_disposal",
@@ -65,7 +110,18 @@
             "factor_unit": "kg CO2e/Tonne",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, waste material or treatment route, geography, reference year, or life-cycle boundary is recorded."
+            }
         },
         {
             "category": "business_travel",
@@ -75,7 +131,18 @@
             "factor_unit": "kg CO2e/passenger-km",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, travel mode, class/occupancy boundary, geography, reference year, or passenger-kilometre method is recorded."
+            }
         },
         {
             "category": "Packaging Materials",
@@ -85,7 +152,18 @@
             "factor_unit": "kg CO2e/kg",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, packaging material specification, geography, reference year, or life-cycle boundary is recorded."
+            }
         },
         {
             "category": "Water & Effluent",
@@ -95,7 +173,18 @@
             "factor_unit": "kg CO2e/m³",
             "source": null,
             "source_year": null,
-            "verification_status": "unverified_demo_value"
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "No factor-specific source, water-supply versus wastewater boundary, geography, reference year, or treatment method is recorded."
+            }
         }
     ]
 }
