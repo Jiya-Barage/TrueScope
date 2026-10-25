@@ -1818,6 +1818,16 @@
   animation: fadeIn 0.25s ease;
 }
 
+.error-banner {
+  padding: 12px 18px;
+  margin-bottom: 20px;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+}
+
 /* Report Paper Preview */
 .report-paper {
   background-color: #ffffff;

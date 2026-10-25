@@ -52,7 +52,7 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
     },
     reports: {
       title: 'Carbon Reporting & Export',
-      subtitle: 'Audit-ready summary reports and local CSV data export for SME stakeholders.',
+      subtitle: 'Draft demo summaries and local CSV data export for technical review.',
     },
     settings: {
       title: 'Platform & Organization Settings',

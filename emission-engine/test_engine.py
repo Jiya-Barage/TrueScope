@@ -10,10 +10,10 @@ from engine import (
 )
 
 
-VALID_EVIDENCE = {
+REVIEW_METADATA_ONLY = {
     "reviewed": True,
     "reviewer": "Reviewer",
-    "methodology": "Reviewed against the cited methodology",
+    "methodology": "Review method is described, but no source excerpt is attached.",
     "review_date": "2025-04-30",
 }
 
@@ -35,6 +35,17 @@ def make_factor(
         "source_year": source_year,
         "verification_status": verification_status,
         "verification_evidence": verification_evidence,
+        "provenance": {
+            "source_title": None,
+            "source_publisher": None,
+            "dataset_version": None,
+            "publication_year": None,
+            "reporting_year": None,
+            "geography": None,
+            "activity_boundary": None,
+            "method": None,
+            "rationale": "Source evidence is unavailable.",
+        },
     }
 
 
@@ -119,13 +130,89 @@ class TestEmissionEngine(unittest.TestCase):
             result["trust_metadata"]["library_status"],
             "verification_in_progress",
         )
-        self.assertEqual(result["trust_metadata"]["geography"], "India")
+        self.assertIsNone(result["trust_metadata"]["geography"])
+        self.assertEqual(
+            result["trust_metadata"]["library_default_geography"],
+            "India",
+        )
         self.assertTrue(result["trust_metadata"]["verification_required"])
         self.assertFalse(result["trust_metadata"]["factor_verified"])
+        self.assertEqual(
+            result["validation_status"],
+            "unverified_demo_value",
+        )
 
     def test_demo_library_factors_remain_unverified(self):
-        for factor in load_emission_factors():
+        expected_factors = {
+            "electricity_grid": (
+                0.710, "kWh", "kg CO2/kWh",
+                "https://www.niti.gov.in/sites/default/files/2026-02/"
+                "Scenarios-Towards-Viksit-Bharat-and-Net-Zero-Sectoral-"
+                "Insights-Power.pdf",
+                None,
+            ),
+            "Fleet Diesel": (
+                2.687, "Litres", "kg CO2e/Litre", None, None,
+            ),
+            "natural_gas": (
+                0.183, "kWh", "kg CO2e/kWh", None, None,
+            ),
+            "freight_transport": (
+                0.602, "tonne-km", "kg CO2e/tonne-km", None, None,
+            ),
+            "waste_disposal": (
+                412.0, "Tonnes", "kg CO2e/Tonne", None, None,
+            ),
+            "business_travel": (
+                0.158, "passenger-km", "kg CO2e/passenger-km", None, None,
+            ),
+            "Packaging Materials": (
+                0.940, "kg", "kg CO2e/kg", None, None,
+            ),
+            "Water & Effluent": (
+                0.344, "m³", "kg CO2e/m³", None, None,
+            ),
+        }
+        factors = load_emission_factors()
+        self.assertEqual(
+            len(factors),
+            len(expected_factors),
+            "Update the factor inventory audit when library records change.",
+        )
+        provenance_fields = {
+            "source_title",
+            "source_publisher",
+            "dataset_version",
+            "publication_year",
+            "reporting_year",
+            "geography",
+            "activity_boundary",
+            "method",
+            "rationale",
+        }
+
+        for factor in factors:
             with self.subTest(category=factor["category"]):
+                self.assertEqual(
+                    (
+                        factor["factor"],
+                        factor["activity_unit"],
+                        factor["factor_unit"],
+                        factor.get("source"),
+                        factor.get("source_year"),
+                    ),
+                    expected_factors[factor["category"]],
+                )
+                self.assertEqual(
+                    factor["verification_status"],
+                    "unverified_demo_value",
+                )
+                provenance = factor["provenance"]
+                self.assertEqual(set(provenance), provenance_fields)
+                self.assertTrue(provenance["rationale"].strip())
+                self.assertIsNone(provenance["geography"])
+                self.assertIsNone(provenance["activity_boundary"])
+                self.assertIsNone(provenance["method"])
                 result = calculate_emissions(
                     factor["category"], 1, factor["activity_unit"]
                 )
@@ -133,9 +220,42 @@ class TestEmissionEngine(unittest.TestCase):
                     result["validation_status"],
                     "unverified_demo_value",
                 )
+                self.assertEqual(
+                    result["emissions_basis"],
+                    "CO2e"
+                    if factor["factor_unit"].startswith("kg CO2e/")
+                    else "CO2"
+                    if factor["factor_unit"].startswith("kg CO2/")
+                    else "unspecified",
+                )
                 self.assertFalse(
                     result["trust_metadata"]["factor_verified"]
                 )
+                self.assertEqual(
+                    result["factor_provenance"],
+                    provenance,
+                )
+                self.assertEqual(
+                    result["trust_metadata"]["library_default_geography"],
+                    "India",
+                )
+
+    def test_factor_provenance_is_required_and_validated(self):
+        factor = make_factor()
+        factor.pop("provenance")
+        with self.assertRaisesRegex(ValueError, "provenance metadata"):
+            self.run_with_library(make_library([factor]))
+
+        for provenance in (
+            {},
+            {"rationale": ""},
+            {"rationale": "No source", "geography": ""},
+        ):
+            with self.subTest(provenance=provenance):
+                factor = make_factor()
+                factor["provenance"] = provenance
+                with self.assertRaisesRegex(ValueError, "provenance"):
+                    self.run_with_library(make_library([factor]))
 
     def test_category_matching_is_exact(self):
         with self.assertRaisesRegex(ValueError, "No emission factor"):
@@ -162,6 +282,7 @@ class TestEmissionEngine(unittest.TestCase):
             with self.subTest(activity_unit=activity_unit, unit=requested_unit):
                 factor = make_factor()
                 factor["activity_unit"] = activity_unit
+                factor["factor_unit"] = f"kg CO2/{activity_unit}"
                 result = self.run_with_library(
                     make_library([factor]), quantity=1, unit=requested_unit
                 )
@@ -240,6 +361,12 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No emission factor"):
             self.run_with_library(make_library(), unit="MWh")
 
+    def test_factor_denominator_must_match_activity_unit(self):
+        factor = make_factor(factor_unit="kg CO2/kWh")
+        factor["activity_unit"] = "litres"
+        with self.assertRaisesRegex(ValueError, "denominator"):
+            self.run_with_library(make_library([factor]))
+
     def test_unsupported_categories_are_rejected(self):
         unsupported_cases = (
             ("mobile_fuel_petrol", "litres"),
@@ -282,13 +409,13 @@ class TestEmissionEngine(unittest.TestCase):
                 verification_status="verified",
                 source=None,
                 source_year=2025,
-                verification_evidence=VALID_EVIDENCE,
+                verification_evidence=REVIEW_METADATA_ONLY,
             ),
             make_factor(
                 verification_status="verified",
                 source="https://www.gov.uk/environment",
                 source_year=None,
-                verification_evidence=VALID_EVIDENCE,
+                verification_evidence=REVIEW_METADATA_ONLY,
             ),
         )
         for factor in incomplete_factors:
@@ -323,7 +450,7 @@ class TestEmissionEngine(unittest.TestCase):
                     verification_status="verified",
                     source=source,
                     source_year=2025,
-                    verification_evidence=VALID_EVIDENCE,
+                    verification_evidence=REVIEW_METADATA_ONLY,
                 )
                 result = self.run_with_library(make_library([factor]))
                 self.assertFalse(result["trust_metadata"]["factor_verified"])
@@ -343,18 +470,22 @@ class TestEmissionEngine(unittest.TestCase):
         )
         result = self.run_with_library(make_library([factor]))
         self.assertFalse(result["trust_metadata"]["factor_verified"])
+        self.assertEqual(
+            result["validation_status"],
+            "unverified_demo_value",
+        )
 
     def test_missing_or_incomplete_evidence_is_not_verified(self):
         incomplete_evidence = (
             None,
             [],
             {"reviewed": True},
-            {**VALID_EVIDENCE, "reviewed": 1},
-            {**VALID_EVIDENCE, "reviewer": ""},
-            {**VALID_EVIDENCE, "reviewer": "  "},
-            {**VALID_EVIDENCE, "methodology": ""},
-            {**VALID_EVIDENCE, "methodology": None},
-            {**VALID_EVIDENCE, "review_date": None},
+            {**REVIEW_METADATA_ONLY, "reviewed": 1},
+            {**REVIEW_METADATA_ONLY, "reviewer": ""},
+            {**REVIEW_METADATA_ONLY, "reviewer": "  "},
+            {**REVIEW_METADATA_ONLY, "methodology": ""},
+            {**REVIEW_METADATA_ONLY, "methodology": None},
+            {**REVIEW_METADATA_ONLY, "review_date": None},
         )
         for evidence in incomplete_evidence:
             with self.subTest(evidence=evidence):
@@ -367,15 +498,33 @@ class TestEmissionEngine(unittest.TestCase):
                 result = self.run_with_library(make_library([factor]))
                 self.assertFalse(result["trust_metadata"]["factor_verified"])
 
-    def test_complete_structural_evidence_allows_verified_flag(self):
+    def test_url_year_and_generic_review_do_not_verify_factor(self):
         factor = make_factor(
             verification_status="verified",
-            source="https://www.gov.uk/environment",
+            source="https://www.gov.uk/",
             source_year=2025,
-            verification_evidence=VALID_EVIDENCE,
+            verification_evidence=REVIEW_METADATA_ONLY,
         )
         result = self.run_with_library(make_library([factor]))
-        self.assertTrue(result["trust_metadata"]["factor_verified"])
+        self.assertFalse(result["trust_metadata"]["factor_verified"])
+        self.assertEqual(result["validation_status"], "unverified_demo_value")
+
+    def test_verification_evidence_must_match_factor_and_provenance(self):
+        factor = make_factor(
+            verification_status="verified",
+            source="https://www.gov.uk/",
+            source_year=2025,
+            verification_evidence={
+                **REVIEW_METADATA_ONLY,
+                "source_locator": "Table not actually reviewed",
+            },
+        )
+        result = self.run_with_library(make_library([factor]))
+        self.assertFalse(result["trust_metadata"]["factor_verified"])
+        self.assertEqual(
+            result["validation_status"],
+            "unverified_demo_value",
+        )
 
     def test_invalid_review_dates_are_not_verified(self):
         for review_date in ("2025-02-30", "2025-2-03", "20250203", " 2025-02-03"):
@@ -385,7 +534,7 @@ class TestEmissionEngine(unittest.TestCase):
                     source="https://www.gov.uk/environment",
                     source_year=2025,
                     verification_evidence={
-                        **VALID_EVIDENCE,
+                        **REVIEW_METADATA_ONLY,
                         "review_date": review_date,
                     },
                 )
@@ -399,7 +548,7 @@ class TestEmissionEngine(unittest.TestCase):
                     verification_status="verified",
                     source="https://www.gov.uk/environment",
                     source_year=source_year,
-                    verification_evidence=VALID_EVIDENCE,
+                    verification_evidence=REVIEW_METADATA_ONLY,
                 )
                 result = self.run_with_library(make_library([factor]))
                 self.assertFalse(result["trust_metadata"]["factor_verified"])

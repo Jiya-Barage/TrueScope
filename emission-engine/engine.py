@@ -20,6 +20,18 @@ APPROVED_FACTOR_STATUSES = {
     "unverified_demo_value",
 }
 
+PROVENANCE_FIELDS = (
+    "source_title",
+    "source_publisher",
+    "dataset_version",
+    "publication_year",
+    "reporting_year",
+    "geography",
+    "activity_boundary",
+    "method",
+    "rationale",
+)
+
 
 def load_emission_library():
     """Load and validate emission factors and trust metadata."""
@@ -100,6 +112,17 @@ def load_emission_library():
                     "must be a non-empty string."
                 )
 
+        factor_unit_parts = factor["factor_unit"].rsplit("/", 1)
+        if (
+            len(factor_unit_parts) != 2
+            or not factor_unit_parts[0].strip()
+            or normalize_unit(factor_unit_parts[1])
+            != normalize_unit(factor["activity_unit"])
+        ):
+            raise ValueError(
+                "Emission factor denominator must match its activity unit."
+            )
+
         factor_status = factor.get("verification_status")
 
         if (
@@ -111,6 +134,26 @@ def load_emission_library():
                 f"'{factor_status}'. Allowed statuses: "
                 f"{', '.join(sorted(APPROVED_FACTOR_STATUSES))}."
             )
+
+        provenance = factor.get("provenance")
+        if not isinstance(provenance, dict):
+            raise ValueError(
+                "Each emission factor must contain provenance metadata."
+            )
+        for key in PROVENANCE_FIELDS:
+            field_value = provenance.get(key)
+            if key == "rationale":
+                if not isinstance(field_value, str) or not field_value.strip():
+                    raise ValueError(
+                        "Emission factor provenance rationale must be non-empty."
+                    )
+            elif field_value is not None and (
+                not isinstance(field_value, str) or not field_value.strip()
+            ):
+                raise ValueError(
+                    f"Emission factor provenance field '{key}' "
+                    "must be a non-empty string or null."
+                )
 
         factor_key = (
             factor["category"],
@@ -224,15 +267,62 @@ def has_valid_source(source):
     )
 
 
-def has_valid_verification_evidence(evidence):
-    """Validate evidence structure without asserting scientific accuracy."""
+def has_valid_verification_evidence(evidence, factor):
+    """Check that a human review is tied to this factor's full provenance."""
     if not isinstance(evidence, dict) or evidence.get("reviewed") is not True:
         return False
 
-    for key in ("reviewer", "methodology"):
+    provenance = factor.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+
+    for key in (
+        "reviewer",
+        "methodology",
+        "source_locator",
+        "supporting_excerpt",
+        "category",
+        "factor_unit",
+        "activity_unit",
+        "source_title",
+        "source_publisher",
+        "dataset_version",
+        "publication_year",
+        "reporting_year",
+        "geography",
+        "activity_boundary",
+        "method",
+    ):
         value = evidence.get(key)
         if not isinstance(value, str) or not value.strip():
             return False
+
+    reviewed_factor = evidence.get("factor")
+    if (
+        isinstance(reviewed_factor, bool)
+        or not isinstance(reviewed_factor, (int, float))
+        or reviewed_factor != factor.get("factor")
+    ):
+        return False
+
+    if (
+        evidence["category"] != factor.get("category")
+        or evidence["factor_unit"] != factor.get("factor_unit")
+        or normalize_unit(evidence["activity_unit"])
+        != normalize_unit(factor.get("activity_unit", ""))
+        or evidence["source_title"] != provenance.get("source_title")
+        or evidence["source_publisher"] != provenance.get("source_publisher")
+        or evidence["dataset_version"] != provenance.get("dataset_version")
+        or evidence["publication_year"] != provenance.get("publication_year")
+        or evidence["reporting_year"] != provenance.get("reporting_year")
+        or evidence["geography"] != provenance.get("geography")
+        or evidence["activity_boundary"]
+        != provenance.get("activity_boundary")
+        or evidence["method"] != provenance.get("method")
+        or evidence.get("source") != factor.get("source")
+        or evidence.get("source_year") != factor.get("source_year")
+    ):
+        return False
 
     review_date = evidence.get("review_date")
     if not isinstance(review_date, str):
@@ -311,7 +401,8 @@ def calculate_emissions(category, quantity, unit):
         and has_valid_source(source)
         and source_year_valid
         and has_valid_verification_evidence(
-            factor_record.get("verification_evidence")
+            factor_record.get("verification_evidence"),
+            factor_record,
         )
     )
 
@@ -339,12 +430,20 @@ def calculate_emissions(category, quantity, unit):
         ),
         "factor_source": source,
         "source_year": source_year,
-        "validation_status": verification_status,
+        "factor_provenance": factor_record["provenance"],
+        "validation_status": (
+            "verified"
+            if factor_verified
+            else "unverified_demo_value"
+            if verification_status == "verified"
+            else verification_status
+        ),
         "trust_metadata": {
             "project": metadata["project"],
             "library_version": metadata["version"],
             "library_status": metadata["status"],
-            "geography": metadata["default_geography"],
+            "geography": factor_record["provenance"]["geography"],
+            "library_default_geography": metadata["default_geography"],
             "verification_required": metadata.get(
                 "factor_verification_required", True
             ),

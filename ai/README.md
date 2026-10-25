@@ -19,7 +19,7 @@ The output conforms strictly to the contract documented in [`docs/ai-output-sche
 ```
 ai/
 ├── README.md               # Architecture, setup guide, and execution commands
-├── requirements.txt        # Pinned Python package dependencies
+├── requirements.txt        # Python package dependencies
 ├── .env.example            # Environment template for local binaries
 ├── pipeline.py             # End-to-end pipeline runner & CLI entrypoint
 ├── ocr/
@@ -47,18 +47,10 @@ ai/
 
 From the project root:
 
-```bash
-# Create local virtual environment
-python -m venv ai/.venv
-
-# Activate environment (Windows PowerShell)
-.\ai\.venv\Scripts\Activate.ps1
-
-# Activate environment (Linux / macOS)
-source ai/.venv/bin/activate
-
-# Install dependencies
-pip install -r ai/requirements.txt
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend\requirements.txt -r ai\requirements.txt
 ```
 
 ### 2. OCR & PDF Dependencies (Windows Setup)
@@ -98,10 +90,10 @@ Execute the pipeline on an invoice from the project root using the module flag:
 
 ```powershell
 # From project root:
-.\ai\.venv\Scripts\python.exe -m ai.pipeline path/to/invoice.pdf
+.\.venv\Scripts\python.exe -m ai.pipeline "C:\path\to\your-invoice.pdf"
 
 # Or if the virtual environment is already activated:
-python -m ai.pipeline sample-invoices/fuel_delivery.pdf
+python -m ai.pipeline "C:\path\to\your-invoice.pdf"
 ```
 
 The CLI prints the formatted JSON payload matching `docs/ai-output-schema.md` to standard output.
@@ -114,32 +106,36 @@ All unit tests are isolated and do not require Tesseract or Poppler to be instal
 
 ```powershell
 # Run the test suite with verbose output
-.\ai\.venv\Scripts\python.exe -m pytest ai/tests/test_pipeline.py -v
+.\.venv\Scripts\python.exe -m pytest ai\tests\test_pipeline.py -v
 ```
 
 ---
 
 ## Category Taxonomy & Emission Engine Synchronization
 
-The classifier keys strictly mirror the database keys maintained by Teammate D (Emission Engine):
+Classifier keys and factor library categories are not fully synchronized. Only
+the following exact category/unit pairs currently match both the classifier and
+the local engine library:
 
-| Activity Key | GHG Scope | Target Emission Factor Data |
+| Activity Key | Matching unit | Current factor basis |
 | :--- | :---: | :--- |
-| `stationary_fuel_diesel` | Scope 1 | DEFRA / EPA Stationary Combustion (litres, gallons) |
-| `mobile_fuel_petrol` | Scope 1 | DEFRA / EPA Passenger Cars / Vans (litres) |
-| `mobile_fuel_diesel` | Scope 1 | DEFRA / EPA Road Fleet / Commercial (litres) |
-| `natural_gas` | Scope 1 | Utility Gas Factors (kWh, m3, therms) |
-| `electricity_grid` | Scope 2 | Location-based Grid Mix (kWh, MWh) |
-| `freight_transport` | Scope 3 | Third-Party Logistics / Freight (tonne.km, kg) |
-| `business_travel` | Scope 3 | Air, Rail, Hotel (passenger.km, spend) |
-| `purchased_goods` | Scope 3 | Upstream Goods & Consumables (kg, spend) |
-| `waste_disposal` | Scope 3 | Commercial Waste Processing (tonnes) |
-| `unknown` | null | Requires manual review in UI |
+| `electricity_grid` | `kWh` | CO2 |
+| `natural_gas` | `kWh` | CO2e |
+| `freight_transport` | `tonne-km` | CO2e |
+| `business_travel` | `passenger-km` | CO2e |
+| `waste_disposal` | `tonnes` | CO2e |
+
+Every factor is an unverified demo value. Several other library records use
+category names that the classifier does not emit. Diesel, petrol, water,
+purchased goods, paper/stationery, and other unmatched categories are skipped
+for review; the engine does not estimate emissions from spend. See
+[`emission-engine/README.md`](../emission-engine/README.md) for recorded
+provenance and gaps.
 
 ---
 
 ## Known Limitations & Roadmap
 
 - **Rule-Based Parsing Baseline**: The current parser extracts standard tabular invoice formats and single-page utility/fuel bills using regex and heuristic layout anchors. Multi-line wrapped tables or unusual column orderings should be reviewed using the confidence score.
-- **Spend-Based Fallback**: If invoices lack physical units (e.g. general freight fee or consulting), the pipeline extracts monetary amounts; downstream calculation requires spend-based emission factors (EEIO).
+- **No Spend-Based Fallback**: Invoice monetary amounts are not physical activity quantities. Rows without a supported quantity/unit pair are skipped for review; no spend-based factors are configured.
 - **Future AWS Textract Adapter**: The extractor architecture is modular (`ai.ocr.extractor.extract`), allowing a drop-in AWS Textract adapter in Phase 2 without changing downstream parser or classifier contracts.
