@@ -173,41 +173,63 @@ CLASSIFICATION_RULES: Dict[str, Dict[str, Any]] = {
     },
     "non_emission": {
         "scope": None,
-        "keywords": [
-            "fixed demand charges",
-            "fixed demand charge",
-            "demand charges",
-            "demand charge",
-            "fixed charges",
-            "fixed charge",
-            "service charges",
-            "service charge",
-            "meter charges",
-            "meter charge",
-            "meter rent",
-            "gst",
-            "cgst",
-            "sgst",
-            "igst",
-            "tax",
-            "taxes",
-            "vat",
-            "cess",
-            "late fee",
-            "late fees",
-            "late payment fee",
-            "interest charges",
-            "round off",
-            "rounding",
-            "discount",
-            "discounts",
-            "security deposit",
-            "deposit",
-            "deposits",
-        ],
+        "keywords": [],  # Populated from STRONG_NON_EMISSION + WEAK_NON_EMISSION below
         "weight": 1.0,
     },
 }
+
+# Strong non-emission keywords: always win, even if an emission keyword is also present
+STRONG_NON_EMISSION: List[str] = [
+    "fixed demand charges",
+    "fixed demand charge",
+    "demand charges",
+    "demand charge",
+    "fixed charges",
+    "fixed charge",
+    "meter charges",
+    "meter charge",
+    "meter rent",
+    "gst",
+    "cgst",
+    "sgst",
+    "igst",
+    "tax",
+    "taxes",
+    "vat",
+    "cess",
+    "late payment fee",
+    "late fee",
+    "late fees",
+    "interest charges",
+    "interest charge",
+    "round off",
+    "rounding off",
+    "rounding",
+    "discount",
+    "discounts",
+    "security deposit",
+    "deposit",
+    "deposits",
+]
+
+# Weak non-emission keywords: generic charge words that win ONLY if no emission keyword matched
+WEAK_NON_EMISSION: List[str] = [
+    "service charges",
+    "service charge",
+    "processing fee",
+    "processing fees",
+    "charges",
+    "charge",
+    "fees",
+    "fee",
+    "service",
+    "services",
+    "handling",
+    "processing",
+]
+
+# Populate non_emission keywords in CLASSIFICATION_RULES for backwards compatibility
+CLASSIFICATION_RULES["non_emission"]["keywords"] = STRONG_NON_EMISSION + WEAK_NON_EMISSION
 
 
 def classify(line_item: Dict[str, Any]) -> Dict[str, Any]:
@@ -223,30 +245,34 @@ def classify(line_item: Dict[str, Any]) -> Dict[str, Any]:
             - "scope" (int or None): 1, 2, 3, or None.
             - "match_strength" (float): 0.0 to 1.0 indicating keyword match confidence.
             - "reason" (str): Short human-readable explanation of the classification rule hit.
+            - "reasons" (list[str]): Explanation strings for explainability UI.
     """
     desc = line_item.get("description", "")
     unit = line_item.get("unit", "") or ""
     text_to_match = f"{desc} {unit}".lower().strip()
 
     if not text_to_match:
+        reason = "Empty description; unable to classify activity."
         return {
             "category": "unknown",
             "scope": None,
             "match_strength": 0.0,
-            "reason": "Empty description; unable to classify activity.",
+            "reason": reason,
+            "reasons": [reason],
         }
 
-    # First check non-emission keywords: non_emission must win over weak matches
-    non_emission_config = CLASSIFICATION_RULES.get("non_emission", {})
-    for kw in non_emission_config.get("keywords", []):
+    # 1. Strong non-emission keywords: always win, even if an emission keyword is also present
+    for kw in sorted(STRONG_NON_EMISSION, key=len, reverse=True):
         pattern = rf"\b{re.escape(kw)}\b"
         if re.search(pattern, text_to_match):
-            specificity = min(1.0, non_emission_config.get("weight", 1.0) * (1.0 if len(kw.split()) > 1 else 0.95))
+            specificity = min(1.0, 1.0 * (1.0 if len(kw.split()) > 1 else 0.95))
+            reason = f"Matched non-emission keyword '{kw}'; no emission factor applies"
             return {
                 "category": "non_emission",
                 "scope": None,
                 "match_strength": round(specificity, 2),
-                "reason": f"Matched non-emission keyword '{kw}'; no emission factor applies",
+                "reason": reason,
+                "reasons": [reason],
             }
 
     best_category: Optional[str] = None
@@ -254,7 +280,7 @@ def classify(line_item: Dict[str, Any]) -> Dict[str, Any]:
     best_match_strength = 0.0
     matched_keyword = ""
 
-    # Check each emission category rule
+    # 2. Check each emission category rule
     for category, config in CLASSIFICATION_RULES.items():
         if category == "non_emission":
             continue
@@ -297,16 +323,49 @@ def classify(line_item: Dict[str, Any]) -> Dict[str, Any]:
             best_match_strength = max(best_match_strength, 0.85)
 
     if best_category and best_match_strength > 0.0:
+        base_reason = f"Matched keyword '{matched_keyword}' -> {best_category} (Scope {best_scope})"
+        reasons = [base_reason]
+
+        # Check if any weak non-emission keyword was present and ignored
+        weak_ignored = any(
+            re.search(rf"\b{re.escape(kw)}\b", text_to_match)
+            for kw in WEAK_NON_EMISSION
+        )
+        if weak_ignored:
+            override_reason = "Emission keyword takes priority over generic charge wording"
+            reasons.append(override_reason)
+            full_reason = f"{base_reason}. {override_reason}"
+        else:
+            full_reason = base_reason
+
         return {
             "category": best_category,
             "scope": best_scope,
             "match_strength": round(best_match_strength, 2),
-            "reason": f"Matched keyword '{matched_keyword}' -> {best_category} (Scope {best_scope})",
+            "reason": full_reason,
+            "reasons": reasons,
         }
 
+    # 3. Weak non-emission keywords: win ONLY if no emission keyword matched
+    for kw in sorted(WEAK_NON_EMISSION, key=len, reverse=True):
+        pattern = rf"\b{re.escape(kw)}\b"
+        if re.search(pattern, text_to_match):
+            specificity = min(1.0, 1.0 * (1.0 if len(kw.split()) > 1 else 0.95))
+            reason = f"Matched non-emission keyword '{kw}'; no emission factor applies"
+            return {
+                "category": "non_emission",
+                "scope": None,
+                "match_strength": round(specificity, 2),
+                "reason": reason,
+                "reasons": [reason],
+            }
+
+    # 4. Unknown: never turn an unrecognized description into non_emission
+    reason = "No emission activity keywords matched; manual review required."
     return {
         "category": "unknown",
         "scope": None,
         "match_strength": 0.0,
-        "reason": "No emission activity keywords matched; manual review required.",
+        "reason": reason,
+        "reasons": [reason],
     }

@@ -273,9 +273,14 @@ def score(
 
     # 3. Classification match strength
     match_score = float(classification.get("match_strength", 0.0))
-    class_reason = classification.get("reason")
-    if class_reason:
-        reasons.append(class_reason)
+    class_reasons = classification.get("reasons")
+    if class_reasons and isinstance(class_reasons, list):
+        for cr in class_reasons:
+            if cr and cr not in reasons:
+                reasons.append(cr)
+    elif classification.get("reason"):
+        if classification["reason"] not in reasons:
+            reasons.append(classification["reason"])
 
     # 4. Domain sanity check
     sanity_score, sanity_note = _calculate_sanity(line_item, classification)
