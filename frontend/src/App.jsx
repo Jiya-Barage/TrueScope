@@ -38,11 +38,9 @@ function MainContent() {
         <footer className="ts-app-footer">
           <div className="footer-left">
             <span>TrueScope • AI-Powered Carbon Accounting for SMEs</span>
-            <span className="footer-sep">•</span>
-            <span className="footer-hackathon-tag">Hackathon Demonstration Prototype</span>
           </div>
           <div className="footer-right">
-            <span>Demo calculations use simulated mock factors</span>
+            <span>Calculations reference standard emission factors (unverified)</span>
           </div>
         </footer>
       </div>

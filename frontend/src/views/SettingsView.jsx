@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Card } from '../components/common/Card';
-import { DemoPill } from '../components/common/Badge';
 import {
   RefreshCwIcon,
   TrashIcon,
@@ -53,9 +52,6 @@ export const SettingsView = () => {
   return (
     <div className="view-container settings-view">
       <div className="settings-header-card">
-        <div className="settings-header-tag">
-          <DemoPill label="SME CONFIGURATION" />
-        </div>
         <h2 className="settings-title">Organization Settings & Emission Parameters</h2>
         <p className="settings-subtitle">
           Configure SME profile attributes, reporting boundaries, and default emission factor libraries.
@@ -156,7 +152,7 @@ export const SettingsView = () => {
                 value={formData.factorDatabase}
                 onChange={(e) => handleChange('factorDatabase', e.target.value)}
               >
-                <option value="Demo Mock Factors (Unverified)">Demo Mock Factors (Current Active)</option>
+                <option value="Demo Mock Factors (Unverified)">Sample emission factors (unverified)</option>
                 <option value="UK DEFRA / DESNZ 2024 (Backend Roadmap)">UK DEFRA 2024 (Future API Integration)</option>
                 <option value="US EPA GHG Hub 2024 (Backend Roadmap)">US EPA GHG Hub (Future API Integration)</option>
               </select>
@@ -183,15 +179,15 @@ export const SettingsView = () => {
         </Card>
       </form>
 
-      {/* Demo Sandbox Management */}
+      {/* Sample Data Management */}
       <Card
-        title="Demo Sandbox & State Management"
-        subtitle="Tools to test different states (empty state, reset sample data) during evaluation"
+        title="Sample Data & State Management"
+        subtitle="Tools to manage records and test empty states"
       >
         <div className="sandbox-actions-grid">
           <div className="sandbox-action-card">
             <div className="sandbox-info">
-              <strong className="sandbox-action-title">Reset to Default Sample Invoices</strong>
+              <strong className="sandbox-action-title">Restore Default Sample Invoices</strong>
               <p className="sandbox-action-desc">
                 Restores the standard suite of 8 realistic SME invoices spanning Scopes 1, 2, and 3.
               </p>
@@ -202,7 +198,7 @@ export const SettingsView = () => {
               onClick={resetDemoData}
             >
               <RefreshCwIcon size={16} />
-              <span>Reset Data</span>
+              <span>Restore Sample Data</span>
             </button>
           </div>
 

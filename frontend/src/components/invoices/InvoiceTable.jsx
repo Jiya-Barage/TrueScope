@@ -99,7 +99,7 @@ export const InvoiceTable = ({
                       <span className="td-inv-num">{inv.invoiceNumber || inv.backendInvoiceId || inv.id}</span>
                       <span className="td-supplier">{inv.supplier}</span>
                       <span className="td-date">
-                        {inv.isBackendUpload ? 'Uploaded invoice' : 'Synthetic demo row'}
+                        {inv.isBackendUpload ? 'Uploaded invoice' : 'Sample record'}
                       </span>
                       <span className="td-date">{formatDate(inv.date)}</span>
                     </div>

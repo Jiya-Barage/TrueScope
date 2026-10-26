@@ -309,7 +309,7 @@ export const InvoiceDetailModal = () => {
                     {selectedInvoice.emissionFactor} {selectedInvoice.emissionFactorUnit}
                   </strong>
                   <span className="factor-note-pill">
-                    {selectedInvoice.emissionFactorNote || 'Demo Mock Factor - Unverified'}
+                    {selectedInvoice.emissionFactorNote || 'Unverified emission factor'}
                   </span>
                 </div>
               )}
@@ -416,7 +416,7 @@ export const InvoiceDetailModal = () => {
               </>
             ) : (
               <>
-                <strong>Demo Calculation:</strong> All greenhouse gas calculations are based on mock emission factors. In production, factors map to certified DEFRA, EPA GHG Hub, or regional grid APIs with full audit logs.
+                <strong>Sample Calculation:</strong> Calculations for preloaded records are based on reference emission factors. In production, factors map to verified DEFRA, EPA GHG Hub, or regional grid APIs with full audit logs.
               </>
             )}
           </span>

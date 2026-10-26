@@ -102,7 +102,7 @@ export const InvoiceUploadModal = () => {
   const handleSelectPreset = (preset) => {
     setSelectedPreset(preset);
     setSelectedFile(null);
-    setErrorMessage('Presets are reference data, not files. Demo processing is not connected in this upload workflow.');
+    setErrorMessage('Presets are reference data, not files. Select an invoice file to upload.');
   };
 
   const handleUpload = async () => {
@@ -293,11 +293,11 @@ export const InvoiceUploadModal = () => {
               </label>
             </div>
 
-            {/* Quick Preset Invoices for Hackathon Testing */}
+            {/* Preset Invoices for Reference */}
             <div className="preset-invoices-section">
               <div className="preset-header">
-                <span className="preset-title">Or test with a preset SME invoice:</span>
-                <span className="preset-subtitle">Instant sample data</span>
+                <span className="preset-title">Reference sample invoices:</span>
+                <span className="preset-subtitle">Sample data for review</span>
               </div>
 
               <div className="preset-grid">

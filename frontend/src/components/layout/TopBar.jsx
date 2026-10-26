@@ -52,11 +52,11 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
     },
     reports: {
       title: 'Carbon Reporting & Export',
-      subtitle: 'Draft demo summaries and local CSV data export for technical review.',
+      subtitle: 'Summary reports and local CSV data export for SME stakeholders.',
     },
     settings: {
       title: 'Platform & Organization Settings',
-      subtitle: 'Manage demo SME profile, reporting parameters, and factor databases.',
+      subtitle: 'Manage SME profile, reporting parameters, and factor databases.',
     },
   };
 
@@ -84,7 +84,6 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
         <div className="topbar-heading">
           <div className="topbar-title-row">
             <h1 className="topbar-title">{currentMeta.title}</h1>
-            <span className="demo-badge">DEMO DATA</span>
           </div>
           <p className="topbar-subtitle">{currentMeta.subtitle}</p>
         </div>
@@ -163,7 +162,7 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
         </div>
 
         {/* Company Profile Card */}
-        <div className="topbar-company-pill" title="Demo SME Profile">
+        <div className="topbar-company-pill" title="SME Profile">
           <div className="company-avatar">
             <BuildingIcon size={16} />
           </div>

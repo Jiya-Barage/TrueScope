@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card } from '../components/common/Card';
-import { ScopeBadge, DemoPill } from '../components/common/Badge';
+import { ScopeBadge } from '../components/common/Badge';
 import {
   InfoIcon,
 } from '../components/common/Icons';
@@ -55,14 +55,13 @@ export const EmissionsView = () => {
       <div className="emissions-header-banner">
         <div>
           <div className="emissions-tag-row">
-            <DemoPill label="DEMO CALCULATIONS • FACTORS UNVERIFIED" />
             <span className="emissions-facility-tag">
               Baseline Year: {company.baselineYear} • Reporting Year: {company.reportingYear}
             </span>
           </div>
           <h2 className="emissions-title">Greenhouse Gas (GHG) Scope Breakdown</h2>
           <p className="emissions-desc">
-            Eligible uploaded CO₂e calculations only; synthetic demo rows, CO₂-only results, and ineligible calculations are excluded. Scope classification and factor evidence have not been independently validated.
+            Eligible uploaded CO₂e calculations only; sample records, CO₂-only results, and ineligible calculations are excluded. Scope classification and factor evidence have not been independently validated.
           </p>
         </div>
       </div>
@@ -194,7 +193,7 @@ export const EmissionsView = () => {
           <div className="methodology-block">
             <span className="block-label">3. Compliance Notice</span>
             <p className="block-text">
-              Preloaded demo records use mock factors. Uploaded results retain backend factor verification status and source where available; unverified factors are flagged for review.
+              Preloaded sample records use reference factors. Uploaded results retain backend factor verification status and source where available; unverified factors are flagged for review.
             </p>
           </div>
         </div>

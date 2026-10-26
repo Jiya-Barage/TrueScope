@@ -59,12 +59,6 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </button>
         </div>
 
-        {/* Demo Mode Notice */}
-        <div className="sidebar-demo-notice">
-          <span className="pulse-dot" />
-          <span className="demo-notice-text">Demo Prototype Mode</span>
-        </div>
-
         {/* Navigation Items */}
         <nav className="sidebar-nav">
           <div className="nav-section-title">Navigation</div>

@@ -1,5 +1,4 @@
 import { Card } from '../components/common/Card';
-import { DemoPill } from '../components/common/Badge';
 import {
   UploadCloudIcon,
   RefreshCwIcon,
@@ -22,12 +21,11 @@ export const InvoicesView = () => {
       <div className="invoices-header-card">
         <div className="invoices-header-left">
           <div className="invoices-header-tag">
-            <DemoPill label="DEMO REPOSITORY" />
             <span className="invoices-count-tag">{stats.invoiceCount} uploaded invoice(s)</span>
           </div>
           <h2 className="invoices-title">Invoices & Activity Data</h2>
           <p className="invoices-subtitle">
-            Uploaded invoice rows are shown alongside clearly labeled synthetic demo rows. Unsupported activities require review and may have no emission calculation.
+            Uploaded invoice records are displayed alongside reference sample data. Unsupported activities require review and may have no emission calculation.
           </p>
         </div>
 
@@ -36,10 +34,10 @@ export const InvoicesView = () => {
             type="button"
             className="btn btn-secondary"
             onClick={resetDemoData}
-            title="Reset invoices back to initial demo data"
+            title="Restore sample invoices"
           >
             <RefreshCwIcon size={16} />
-            <span>Reset Demo Data</span>
+            <span>Restore Sample Data</span>
           </button>
 
           <button
@@ -80,7 +78,7 @@ export const InvoicesView = () => {
           <span className="strip-val conf">{stats.averageConfidence}%</span>
         </div>
         <p className="invoices-subtitle">
-          Totals include only eligible uploaded kg CO₂e calculations. Synthetic demo rows, CO₂-only results, skipped, failed, and invalid calculations are excluded.
+          Totals include only eligible uploaded kg CO₂e calculations. Sample records, CO₂-only results, skipped, failed, and invalid calculations are excluded.
         </p>
       </div>
 

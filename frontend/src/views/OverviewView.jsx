@@ -1,5 +1,5 @@
 import { Card, MetricCard } from '../components/common/Card';
-import { ScopeBadge, DemoPill } from '../components/common/Badge';
+import { ScopeBadge } from '../components/common/Badge';
 import {
   UploadCloudIcon,
   FileTextIcon,
@@ -35,14 +35,13 @@ export const OverviewView = () => {
       <div className="overview-welcome-banner">
         <div className="welcome-banner-text">
           <div className="banner-tag-row">
-            <DemoPill label="DEMO ENVIRONMENT" />
             <span className="banner-facility-tag">
               {company.name} • {company.size}
             </span>
           </div>
           <h2 className="welcome-heading">SME Greenhouse Gas Overview</h2>
           <p className="welcome-desc">
-            Uploaded invoice calculation results are shown separately from synthetic sample data.
+            Uploaded invoice calculation results are shown separately from sample data.
             Review factor provenance and verification status before interpreting any estimate.
           </p>
         </div>
@@ -64,10 +63,9 @@ export const OverviewView = () => {
         <MetricCard
           title="Uploaded CO₂e Results"
           value={formatEmissions(stats.totalEmissionsKg)}
-          subvalue={`${(stats.totalEmissionsKg / 1000).toFixed(2)} metric tons CO₂e; excludes demo and ineligible rows`}
+          subvalue={`${(stats.totalEmissionsKg / 1000).toFixed(2)} metric tons CO₂e; excludes sample and ineligible rows`}
           trendLabel="Unverified estimates; review factor evidence"
           icon={TrendingDownIcon}
-          badge={<DemoPill label="ESTIMATE" />}
         />
 
         <MetricCard
@@ -110,7 +108,7 @@ export const OverviewView = () => {
       <div className="charts-split-grid">
         <Card
           title="Monthly Emissions Trend (kg CO₂e)"
-          subtitle="Static synthetic demo trend; uploaded invoices are not included"
+          subtitle="Sample emissions trend; uploaded invoices are excluded"
           className="chart-card-trend"
         >
           <MonthlyTrendChart data={monthlyTrends} />
@@ -118,7 +116,7 @@ export const OverviewView = () => {
 
         <Card
           title="Emissions by Category"
-          subtitle="Eligible uploaded CO₂e calculations only; synthetic demo rows excluded"
+          subtitle="Eligible uploaded CO₂e calculations only; sample records excluded"
           className="chart-card-category"
         >
           <CategoryDonutChart
@@ -130,7 +128,7 @@ export const OverviewView = () => {
       {/* Recent Invoices Activity Section */}
       <Card
         title="Recent Invoice Activity"
-        subtitle="Uploaded invoices and clearly marked synthetic demo rows"
+        subtitle="Uploaded invoices and reference sample records"
         headerAction={
           <button
             type="button"
@@ -150,16 +148,16 @@ export const OverviewView = () => {
         />
       </Card>
 
-      {/* Bottom Methodology & Hackathon Note */}
+      {/* Bottom Methodology & Limitations Note */}
       <div className="overview-methodology-note">
         <div className="methodology-icon">
           <InfoIcon size={18} />
         </div>
         <div className="methodology-text">
-          <strong>Calculation Basis & Demo Factor Notice:</strong>
+          <strong>Calculation Basis & Limitations:</strong>
           <span>
             Activity quantity × emission factor produces emissions in that factor's reported basis and unit; CO₂ is not treated as CO₂e.
-            Synthetic demo values are excluded from uploaded totals. Uploaded CO₂-only, skipped, failed, or otherwise ineligible rows are excluded from CO₂e totals; uploaded factor values remain unverified unless evidence is established.
+            Sample values are excluded from uploaded totals. Uploaded CO₂-only, skipped, failed, or otherwise ineligible rows are excluded from CO₂e totals; uploaded factor values remain unverified unless evidence is established.
           </span>
         </div>
       </div>

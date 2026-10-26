@@ -199,7 +199,7 @@ export const MonthlyTrendChart = ({ data = [] }) => {
 
       <div className="chart-caption">
         <span>Unit: kg CO₂e</span>
-        <span className="chart-disclaimer-tag">Demo Simulated Historical Baseline</span>
+        <span className="chart-disclaimer-tag">Sample Historical Baseline</span>
       </div>
     </div>
   );
