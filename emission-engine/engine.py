@@ -336,7 +336,7 @@ def has_valid_verification_evidence(evidence, factor):
     return parsed_date.isoformat() == review_date
 
 
-def calculate_emissions(category, quantity, unit):
+def calculate_emissions(category, quantity, unit, expected_unit=None):
     """Calculate emissions and return factor trust information.
 
     ``factor_verified`` reflects structural checks of supplied provenance and
@@ -360,6 +360,15 @@ def calculate_emissions(category, quantity, unit):
 
     if not isinstance(unit, str) or not unit.strip():
         raise ValueError("Unit must be a non-empty string.")
+
+    if expected_unit is not None:
+        if not isinstance(expected_unit, str) or not expected_unit.strip():
+            raise ValueError("Expected unit must be a non-empty string.")
+        if normalize_unit(unit) != normalize_unit(expected_unit):
+            raise ValueError(
+                f"Activity unit '{unit}' does not match expected unit "
+                f"'{expected_unit}'."
+            )
 
     metadata, factors = load_emission_library()
 

@@ -323,6 +323,24 @@ class TestEmissionEngine(unittest.TestCase):
         result = self.run_with_library(make_library(), quantity=10, unit="KWH")
         self.assertEqual(result["emissions"], 7.1)
 
+    def test_expected_unit_accepts_normalized_aliases(self):
+        result = calculate_emissions(
+            "electricity_grid",
+            10,
+            "kWh",
+            expected_unit="KWH",
+        )
+        self.assertEqual(result["emissions"], 7.1)
+
+    def test_expected_unit_mismatch_is_rejected_before_calculation(self):
+        with self.assertRaisesRegex(ValueError, "does not match expected unit"):
+            calculate_emissions(
+                "electricity_grid",
+                10,
+                "miles",
+                expected_unit="kWh",
+            )
+
     def test_supported_unit_aliases(self):
         aliases = (
             ("litres", "litre"),
@@ -600,6 +618,10 @@ class TestEmissionEngine(unittest.TestCase):
                     ValueError, "No emission factor found"
                 ):
                     calculate_emissions(category, quantity, unit)
+
+    def test_non_emission_category_has_no_emission_factor(self):
+        with self.assertRaisesRegex(ValueError, "No emission factor found"):
+            calculate_emissions("non_emission", 10, "kWh")
 
     def test_incompatible_activity_unit_has_no_matching_factor(self):
         with self.assertRaisesRegex(ValueError, "No emission factor found"):

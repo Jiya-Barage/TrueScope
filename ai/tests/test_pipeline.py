@@ -6,11 +6,13 @@ allowing automated CI/CD and offline verification.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 import pytest
 
 from ai.classification.classifier import classify
-from ai.confidence.scorer import score
+from ai.confidence.scorer import EXPECTED_UNITS_BY_CATEGORY, score
 from ai.parsing.parser import parse
 from ai.pipeline import run
 
@@ -929,6 +931,37 @@ def test_expected_unit_present_on_every_line_item(tmp_path):
     assert "expected_unit" in item3
     assert item3["expected_unit"] is None
     assert item3["unit"].lower() == "nos"
+
+
+def test_factor_backed_expected_units_come_from_factor_library():
+    repository_root = Path(__file__).resolve().parents[2]
+    factor_path = (
+        repository_root
+        / "emission-engine"
+        / "data"
+        / "emission_factors.json"
+    )
+    library = json.loads(factor_path.read_text(encoding="utf-8"))
+    factor_units = {}
+    for factor in library["factors"]:
+        factor_units.setdefault(factor["category"], set()).add(
+            factor["activity_unit"]
+        )
+
+    for category, units in factor_units.items():
+        if len(units) == 1 and category in EXPECTED_UNITS_BY_CATEGORY:
+            assert EXPECTED_UNITS_BY_CATEGORY[category] == next(iter(units))
+
+    expected_units_without_factors = {
+        "mobile_fuel_diesel": "litre",
+        "stationary_fuel_diesel": "litre",
+        "mobile_fuel_petrol": "litre",
+        "purchased_goods": "kg",
+        "water_effluent": "m3",
+    }
+    for category, expected_unit in expected_units_without_factors.items():
+        assert category not in factor_units
+        assert EXPECTED_UNITS_BY_CATEGORY[category] == expected_unit
 
 
 def validate_output(output: dict) -> None:

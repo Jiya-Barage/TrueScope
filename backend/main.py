@@ -201,9 +201,15 @@ def _calculate_emissions(
     category: str,
     quantity: int | float,
     unit: str,
+    expected_unit: str | None = None,
 ) -> dict[str, Any]:
     engine = _load_emission_engine()
-    return engine.calculate_emissions(category, quantity, unit)
+    return engine.calculate_emissions(
+        category,
+        quantity,
+        unit,
+        expected_unit=expected_unit,
+    )
 
 
 def _validate_ai_result(result: Any) -> None:
@@ -378,11 +384,20 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
             calculation_reason = "Activity quantity must be finite."
         else:
             try:
-                calculation = _calculate_emissions(
-                    category,
-                    quantity,
-                    unit,
-                )
+                expected_unit = item.get("expected_unit")
+                if expected_unit is None:
+                    calculation = _calculate_emissions(
+                        category,
+                        quantity,
+                        unit,
+                    )
+                else:
+                    calculation = _calculate_emissions(
+                        category,
+                        quantity,
+                        unit,
+                        expected_unit,
+                    )
 
                 emission_value = (
                     calculation.get("emissions")
@@ -415,7 +430,14 @@ def _enrich_emission_calculations(result: dict[str, Any]) -> None:
                     )
 
             except ValueError as exc:
-                if str(exc).startswith("No emission factor found"):
+                if str(exc).startswith(
+                    "Activity unit '"
+                ) and "does not match expected unit" in str(exc):
+                    calculation_reason = (
+                        "Activity unit is incompatible with the expected "
+                        "unit for this category."
+                    )
+                elif str(exc).startswith("No emission factor found"):
                     calculation_reason = (
                         "No emission factor matches this category and unit."
                     )

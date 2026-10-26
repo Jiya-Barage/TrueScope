@@ -7,7 +7,9 @@ classification match strength, and domain-specific sanity checks.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 # Weights for composite confidence calculation (Must sum to 1.0)
@@ -27,19 +29,62 @@ FLAG_THRESHOLDS = {
 # Penalty applied when quantity * rate deviates significantly from amount (> 2%)
 RATE_MISMATCH_PENALTY: float = 0.40
 
-# Canonical expected units per activity category expected by the Emission Engine
-EXPECTED_UNITS_BY_CATEGORY: Dict[str, str] = {
-    "electricity_grid": "kWh",
-    "natural_gas": "kWh",
-    "freight_transport": "tonne-km",
-    "waste_disposal": "tonne",
-    "business_travel": "passenger-km",
+# These categories have schema-level expected units but no exact category entry
+# in the factor library. Their units do not imply that a factor is available.
+_EXPECTED_UNITS_WITHOUT_FACTORS: Dict[str, str] = {
     "mobile_fuel_diesel": "litre",
     "stationary_fuel_diesel": "litre",
     "mobile_fuel_petrol": "litre",
     "purchased_goods": "kg",
     "water_effluent": "m3",
 }
+
+
+def _load_expected_units_by_category() -> Dict[str, str]:
+    factor_file = (
+        Path(__file__).resolve().parents[2]
+        / "emission-engine"
+        / "data"
+        / "emission_factors.json"
+    )
+    with factor_file.open("r", encoding="utf-8") as file:
+        library = json.load(file)
+
+    factors = library.get("factors") if isinstance(library, dict) else None
+    if not isinstance(factors, list):
+        raise ValueError("Emission library must contain a factors list.")
+
+    factor_units: Dict[str, Set[str]] = {}
+    for factor in factors:
+        if not isinstance(factor, dict):
+            raise ValueError("Each emission factor must be a JSON object.")
+        category = factor.get("category")
+        activity_unit = factor.get("activity_unit")
+        if (
+            not isinstance(category, str)
+            or not category.strip()
+            or not isinstance(activity_unit, str)
+            or not activity_unit.strip()
+        ):
+            raise ValueError(
+                "Emission factors must define a category and activity unit."
+            )
+        factor_units.setdefault(category, set()).add(activity_unit)
+
+    expected_units = {
+        category: next(iter(units))
+        for category, units in factor_units.items()
+        if len(units) == 1
+    }
+    for category, unit in _EXPECTED_UNITS_WITHOUT_FACTORS.items():
+        if category not in factor_units:
+            expected_units[category] = unit
+
+    return expected_units
+
+
+# Factor-backed categories take their expected unit directly from the library.
+EXPECTED_UNITS_BY_CATEGORY = _load_expected_units_by_category()
 
 # Domain mapping of expected plausible units per category
 PLAUSIBLE_UNITS_BY_CATEGORY: Dict[str, Set[str]] = {

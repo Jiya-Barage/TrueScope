@@ -1130,26 +1130,37 @@ def test_non_emission_does_not_make_successful_emission_total_incomplete(monkeyp
 
 
 @pytest.mark.parametrize(
-    "category",
+    ("category", "expected_unit"),
     [
-        "water_effluent",
-        "mobile_fuel_diesel",
-        "stationary_fuel_diesel",
-        "purchased_goods",
+        ("water_effluent", "m3"),
+        ("mobile_fuel_diesel", "litre"),
+        ("stationary_fuel_diesel", "litre"),
+        ("purchased_goods", "kg"),
     ],
 )
-def test_new_emission_categories_skip_missing_factors_without_failing_invoice(monkeypatch, category):
+def test_new_emission_categories_skip_missing_factors_without_failing_invoice(
+    monkeypatch, category, expected_unit
+):
     calls = []
 
-    def missing_factor(category_arg, quantity, unit):
-        calls.append((category_arg, quantity, unit))
+    def missing_factor(category_arg, quantity, unit, expected_unit=None):
+        calls.append((category_arg, quantity, unit, expected_unit))
         raise ValueError(
             f"No emission factor found for category '{category_arg}' with unit '{unit}'."
         )
 
     response = _upload_ai_result(
         monkeypatch,
-        _ai_result([_line_item(category=category, scope=None, expected_unit="litres")]),
+        _ai_result(
+            [
+                _line_item(
+                    category=category,
+                    scope=None,
+                    unit=expected_unit,
+                    expected_unit=expected_unit,
+                )
+            ]
+        ),
         missing_factor,
     )
 
@@ -1159,7 +1170,7 @@ def test_new_emission_categories_skip_missing_factors_without_failing_invoice(mo
     assert payload["processing_status"] == "completed"
     assert payload["emission_calculation_status"] == "partial"
     assert line_item["category"] == category
-    assert line_item["expected_unit"] == "litres"
+    assert line_item["expected_unit"] == expected_unit
     assert line_item["calculation_status"] == "skipped"
     assert line_item["calculation_reason"] == "No emission factor matches this category and unit."
     assert line_item["emission_calculation"] is None
@@ -1169,14 +1180,54 @@ def test_new_emission_categories_skip_missing_factors_without_failing_invoice(mo
         in warning
         for warning in payload["warnings"]
     )
-    assert calls == [(category, 100, "kWh")]
+    assert calls == [(category, 100, expected_unit, expected_unit)]
+
+
+def test_expected_unit_is_passed_through_upload_and_mismatch_is_not_calculated(
+    monkeypatch,
+):
+    _mock_ai_pipeline(
+        monkeypatch,
+        lambda path, invoice_id: {
+            **_ai_result(
+                [
+                    _line_item(
+                        category="electricity_grid",
+                        unit="miles",
+                        expected_unit="kWh",
+                    )
+                ]
+            ),
+            "invoice_id": invoice_id,
+        },
+    )
+
+    response = _post_upload(
+        monkeypatch, "utility.pdf", b"invoice bytes", "application/pdf"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["result"]
+    line_item = payload["line_items"][0]
+    assert line_item["expected_unit"] == "kWh"
+    assert payload["emission_calculation_status"] == "partial"
+    assert line_item["calculation_status"] == "skipped"
+    assert line_item["calculation_reason"] == (
+        "Activity unit is incompatible with the expected unit for this category."
+    )
+    assert line_item["emission_calculation"] is None
+    assert any(
+        "Activity unit is incompatible with the expected unit"
+        in warning
+        for warning in payload["warnings"]
+    )
 
 
 def test_incompatible_activity_unit_skips_calculation_with_warning(monkeypatch):
     _mock_ai_pipeline(
         monkeypatch,
         lambda path, invoice_id: {
-            **_ai_result([_line_item(unit="miles")]),
+            **_ai_result([_line_item(unit="miles", expected_unit="kWh")]),
             "invoice_id": invoice_id,
         },
     )
@@ -1191,11 +1242,11 @@ def test_incompatible_activity_unit_skips_calculation_with_warning(monkeypatch):
     assert payload["emission_calculation_status"] == "partial"
     assert line_item["calculation_status"] == "skipped"
     assert line_item["calculation_reason"] == (
-        "No emission factor matches this category and unit."
+        "Activity unit is incompatible with the expected unit for this category."
     )
     assert line_item["emission_calculation"] is None
     assert any(
-        "No emission factor matches this category and unit."
+        "Activity unit is incompatible with the expected unit"
         in warning
         for warning in payload["warnings"]
     )

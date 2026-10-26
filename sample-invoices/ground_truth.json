@@ -1,0 +1,72 @@
+{
+  "labeling_note": "These are explicitly synthetic test invoices, not supplier invoices. Labels were transcribed from the corresponding synthetic demo images.",
+  "invoices": [
+    {
+      "file": "synthetic-electricity-invoice.png",
+      "vendor": "Synthetic Grid Power Ltd",
+      "invoice_date": "2026-10-20",
+      "invoice_number": "SYN-2026-001",
+      "currency": "GBP",
+      "line_items": [
+        {
+          "description": "Electricity consumption",
+          "quantity": 100.0,
+          "unit": "kWh",
+          "rate": 0.24,
+          "amount": 24.0
+        }
+      ]
+    },
+    {
+      "file": "synthetic-messy-invoice.png",
+      "vendor": "Synthetic Demo Supplies Ltd",
+      "invoice_date": "2026-10-21",
+      "invoice_number": "SYN-MESSY-001",
+      "currency": "INR",
+      "line_items": [
+        {
+          "description": "High Speed Diesel (HSD) for generator",
+          "quantity": 250.0,
+          "unit": "litre",
+          "rate": 92.4,
+          "amount": 23100.0
+        },
+        {
+          "description": "Petrol - company vehicle",
+          "quantity": 60.0,
+          "unit": "litre",
+          "rate": 104.1,
+          "amount": 6246.0
+        },
+        {
+          "description": "Freight delivery Pune to Mumbai",
+          "quantity": 1.0,
+          "unit": "trip",
+          "rate": 8500.0,
+          "amount": 8500.0
+        },
+        {
+          "description": "Ad paper reams office supplies",
+          "quantity": 40.0,
+          "unit": "nos",
+          "rate": 235.0,
+          "amount": 9400.0
+        },
+        {
+          "description": "Waste disposal service monthly",
+          "quantity": 1.0,
+          "unit": "month",
+          "rate": 2800.0,
+          "amount": 2800.0
+        },
+        {
+          "description": "Taxi hire client visit",
+          "quantity": 2.0,
+          "unit": "trip",
+          "rate": 4350.0,
+          "amount": 2700.0
+        }
+      ]
+    }
+  ]
+}
