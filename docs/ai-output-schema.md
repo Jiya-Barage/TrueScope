@@ -324,6 +324,9 @@ To foster trust among SME clients and non-expert sustainability managers:
 
 ## 8. Changelog
 
+### 2026-10-26 (Keyword Priority Update)
+- **Non-emission Keyword Priority:** `non_emission` now uses strong vs weak keyword priority; emission keywords beat generic charge wording.
+
 ### 2026-10-19 (Additive Schema Update)
 - **New Category `non_emission` (Scope null):** Added dedicated activity key for known zero-emission invoice items (fixed/demand/service/meter charges, GST, tax, cess, late fees, rounding, discounts, deposits) where no emission factor applies.
 - **New Category `water_effluent` (Scope 3):** Added activity key for water supply, effluent treatment, sewage, and STP items with canonical expected unit `m3`.
