@@ -16,6 +16,18 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
     'Emission Factor',
     'Emission Factor Unit',
     'Emission Factor Status',
+    'Emission Factor Source',
+    'Emission Factor Source Title',
+    'Emission Factor Source Publisher',
+    'Emission Factor Dataset Version',
+    'Emission Factor Publication Year',
+    'Emission Factor Reference Year',
+    'Emission Factor Geography',
+    'Library Default Geography',
+    'Emission Factor Activity Boundary',
+    'Emission Factor Method',
+    'Emission Factor Provenance Limitation',
+    'Emission Factor Verified',
     'Estimated Emissions',
     'Emissions Unit',
     'Emissions Basis',
@@ -60,6 +72,18 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
       escapeCSV(inv.emissionFactor),
       escapeCSV(inv.emissionFactorUnit),
       escapeCSV(inv.emissionFactorNote || (isUploaded ? null : 'Demo Mock Factor - Unverified')),
+      escapeCSV(inv.emissionFactorSource),
+      escapeCSV(inv.emissionFactorProvenance?.source_title),
+      escapeCSV(inv.emissionFactorProvenance?.source_publisher),
+      escapeCSV(inv.emissionFactorProvenance?.dataset_version),
+      escapeCSV(inv.emissionFactorProvenance?.publication_year),
+      escapeCSV(inv.emissionFactorSourceYear),
+      escapeCSV(inv.emissionFactorGeography),
+      escapeCSV(inv.emissionFactorLibraryDefaultGeography),
+      escapeCSV(inv.emissionFactorProvenance?.activity_boundary),
+      escapeCSV(inv.emissionFactorProvenance?.method),
+      escapeCSV(inv.emissionFactorProvenance?.rationale),
+      escapeCSV(isUploaded ? inv.emissionFactorVerified : false),
       escapeCSV(emissionsValue),
       escapeCSV(emissionsUnit),
       escapeCSV(emissionsBasis),
@@ -82,9 +106,11 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
     `# Organization: ${companyInfo.name || 'Apex Logistics & Supplies SME'}`,
     `# Reporting Period: ${companyInfo.reportingPeriod || '2024 YTD'}`,
     `# Generated At: ${reportDate}`,
-    `# NOTICE: Uploaded rows retain backend emissions basis, unit, and calculation status. Demo/mock rows contain predefined values and are identified in Data Provenance.`,
+    `# NOTICE: This export includes all available rows, not a filtered reporting period. Uploaded rows retain the backend emissions basis, unit, factor geography, verification state, and calculation status. Demo/mock rows contain predefined values and are identified in Data Provenance.`,
     `#`,
-  ];
+  ].map((line) =>
+    [escapeCSV(line), ...headers.slice(1).map(() => '""')].join(','),
+  );
 
   const csvContent = [
     ...metadataLines,
@@ -103,7 +129,18 @@ export const downloadCSV = (content, filename = 'truescope-emissions-report-demo
   link.setAttribute('download', filename);
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
+export const createReportFilename = (organizationName, date = new Date()) => {
+  const organizationSlug = String(organizationName || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'organization';
+  return `truescope-emissions-report-${organizationSlug}-${date.toISOString().slice(0, 10)}.csv`;
 };

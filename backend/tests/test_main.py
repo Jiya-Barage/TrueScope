@@ -1,6 +1,10 @@
 import importlib.util
 import sys
 import os
+import math
+import json
+import subprocess
+from pathlib import Path
 from io import BytesIO
 from types import ModuleType
 
@@ -10,6 +14,7 @@ from starlette.datastructures import FormData, UploadFile
 from starlette.requests import Request
 
 from backend import main
+from backend import storage
 from backend.main import INVOICE_RECORDS, app
 
 
@@ -135,8 +140,9 @@ def _upload_ai_result(monkeypatch, result, calculate):
 
 
 @pytest.fixture(autouse=True)
-def clear_invoice_records():
+def clear_invoice_records(tmp_path, monkeypatch):
     INVOICE_RECORDS.clear()
+    monkeypatch.setattr(storage, "DATABASE_PATH", tmp_path / "truescope-test.sqlite3")
     yield
     INVOICE_RECORDS.clear()
 
@@ -146,6 +152,144 @@ def test_health():
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_completed_invoice_persists_across_cache_reload_and_can_be_deleted(monkeypatch):
+    pipeline_result = _ai_result([])
+    _mock_ai_pipeline(
+        monkeypatch,
+        lambda path, invoice_id: {**pipeline_result, "invoice_id": invoice_id},
+    )
+
+    response = _post_upload(
+        monkeypatch,
+        "synthetic-invoice.pdf",
+        b"synthetic invoice bytes",
+        "application/pdf",
+    )
+
+    assert response.status_code == 200
+    invoice_id = response.json()["invoice_id"]
+    assert storage.DATABASE_PATH.is_file()
+
+    INVOICE_RECORDS.clear()
+    environment = os.environ.copy()
+    environment["TRUESCOPE_DATABASE_PATH"] = str(storage.DATABASE_PATH)
+    restarted_process_read = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, sys; "
+                "from backend.storage import get_invoice; "
+                "print(json.dumps(get_invoice(sys.argv[1])))"
+            ),
+            invoice_id,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+        env=environment,
+    )
+    persisted_record = json.loads(restarted_process_read.stdout)
+    assert persisted_record["status"] == "completed"
+    assert persisted_record["result"]["invoice_id"] == invoice_id
+
+    assert client.get(f"/api/invoices/{invoice_id}/status").json()["status"] == "completed"
+    assert client.get(f"/api/invoices/{invoice_id}/results").json()["invoice_id"] == invoice_id
+    report = client.get(f"/api/invoices/{invoice_id}/report")
+    assert report.status_code == 200
+    assert report.json()["invoice_id"] == invoice_id
+
+    collection = client.get("/api/invoices")
+    assert collection.status_code == 200
+    assert any(item["invoice_id"] == invoice_id for item in collection.json()["invoices"])
+
+    deleted = client.delete(f"/api/invoices/{invoice_id}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"invoice_id": invoice_id, "status": "deleted"}
+    assert client.get(f"/api/invoices/{invoice_id}/status").status_code == 404
+
+
+def test_missing_description_and_invalid_scope_are_represented_for_review(monkeypatch):
+    response = _upload_ai_result(
+        monkeypatch,
+        _ai_result(
+            [
+                _line_item(
+                    description=None,
+                    category="non_emission",
+                    scope=4,
+                    quantity=None,
+                    unit=None,
+                )
+            ]
+        ),
+        lambda *args: pytest.fail("non-emission line must not be calculated"),
+    )
+
+    line = response.json()["result"]["line_items"][0]
+    assert response.status_code == 200
+    assert line["description"] == "Description unavailable"
+    assert line["scope"] is None
+    assert line["calculation_status"] == "not_applicable"
+    assert line["review_required"] is True
+    assert "Line-item description is missing or invalid." in line["review_reasons"]
+
+
+def test_non_finite_ai_fields_are_normalized_and_skipped(monkeypatch):
+    response = _upload_ai_result(
+        monkeypatch,
+        _ai_result(
+            [
+                _line_item(
+                    quantity=math.nan,
+                    amount=math.inf,
+                    confidence=math.nan,
+                )
+            ]
+        ),
+        lambda *args: pytest.fail("non-finite quantity must not be calculated"),
+    )
+
+    payload = response.json()["result"]
+    line = payload["line_items"][0]
+    assert response.status_code == 200
+    assert line["quantity"] is None
+    assert line["amount"] is None
+    assert line["confidence"] is None
+    assert line["calculation_status"] == "skipped"
+    assert line["review_required"] is True
+    assert any("Non-finite activity quantity" in warning for warning in payload["warnings"])
+
+
+def test_malformed_ai_line_fields_are_normalized_without_json_response_failure(monkeypatch):
+    response = _upload_ai_result(
+        monkeypatch,
+        _ai_result(
+            [
+                _line_item(
+                    description={"text": "Electricity"},
+                    quantity={"value": 100},
+                    unit={"label": "kWh"},
+                    category=["electricity_grid"],
+                    scope=True,
+                )
+            ]
+        ),
+        lambda *args: pytest.fail("malformed activity values must not be calculated"),
+    )
+
+    line = response.json()["result"]["line_items"][0]
+    assert response.status_code == 200
+    assert line["description"] == "Description unavailable"
+    assert line["quantity"] is None
+    assert line["unit"] is None
+    assert line["category"] == "unknown"
+    assert line["scope"] is None
+    assert line["calculation_status"] == "skipped"
+    assert line["review_required"] is True
 
 
 def test_cors_preflight_allows_vite_origin_for_json_post():
@@ -164,6 +308,20 @@ def test_cors_preflight_allows_vite_origin_for_json_post():
     assert "content-type" in response.headers["access-control-allow-headers"].lower()
 
 
+def test_cors_preflight_allows_invoice_delete_from_vite():
+    response = client.options(
+        "/api/invoices/inv_test",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+    assert "DELETE" in response.headers["access-control-allow-methods"]
+
+
 def test_cors_adds_allow_origin_for_configured_frontend():
     response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
 
@@ -171,8 +329,22 @@ def test_cors_adds_allow_origin_for_configured_frontend():
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
-def test_cors_does_not_allow_unconfigured_origin():
+def test_cors_allows_vite_fallback_origin():
     response = client.get("/api/health", headers={"Origin": "http://localhost:5174"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5174"
+
+
+def test_cors_allows_loopback_ip_vite_origin():
+    response = client.get("/api/health", headers={"Origin": "http://127.0.0.1:5173"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
+def test_cors_does_not_allow_non_vite_origin():
+    response = client.get("/api/health", headers={"Origin": "http://localhost:5180"})
 
     assert response.status_code == 200
     assert "access-control-allow-origin" not in response.headers
@@ -261,6 +433,38 @@ def test_successful_upload_invokes_pipeline_and_stores_result(monkeypatch):
     assert INVOICE_RECORDS[calls["invoice_id"]]["result"] == payload["result"]
 
 
+def test_upload_normalizes_invalid_warning_and_review_payloads(monkeypatch):
+    result = {
+        "invoice_id": "placeholder",
+        "source_file": "temporary.pdf",
+        "vendor": "Example Energy",
+        "line_items": [
+            {
+                "description": "Paper invoice charge",
+                "quantity": 1,
+                "unit": "kg",
+                "amount": 5,
+                "category": "non_emission",
+                "scope": None,
+                "confidence": 0.9,
+                "confidence_flag": "high",
+                "reasons": [],
+                "review_reasons": "Already flagged",
+            }
+        ],
+        "overall_confidence": 0.9,
+        "warnings": None,
+    }
+
+    _mock_ai_pipeline(monkeypatch, lambda path, invoice_id: {**result, "invoice_id": invoice_id})
+    response = _post_upload(monkeypatch, "valid.pdf", b"invoice bytes", "application/pdf")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"]["warnings"] == []
+    assert payload["result"]["line_items"][0]["review_reasons"] == ["Already flagged"]
+
+
 def test_upload_rejects_unsupported_extension(monkeypatch):
     response = _post_upload(monkeypatch, "invoice.txt", b"data", "text/plain")
 
@@ -284,6 +488,11 @@ def test_upload_requires_exactly_one_file(monkeypatch):
     )
 
     class FormContext:
+        def __await__(self):
+            async def resolve():
+                return form
+            return resolve().__await__()
+
         async def __aenter__(self):
             return form
 
@@ -602,6 +811,7 @@ def test_uploaded_report_aggregates_only_successful_compatible_calculations():
         ]
     )
     result["invoice_id"] = invoice_id
+    result["emission_calculation_status"] = "partial"
     INVOICE_RECORDS[invoice_id] = {
         "status": "completed",
         "result": result,
@@ -614,6 +824,7 @@ def test_uploaded_report_aggregates_only_successful_compatible_calculations():
     assert response.status_code == 200
     report = response.json()
     total = report["totals"]["successful_calculation_total"]
+    assert report["emission_calculation_status"] == "partial"
     assert report["source"]["kind"] == "upload"
     assert len(report["line_items"]) == 4
     assert report["warnings"] == ["Original AI warning"]
@@ -676,6 +887,7 @@ def test_demo_report_marks_predefined_mock_emissions_and_no_engine_total():
 
     assert response.status_code == 200
     report = response.json()
+    assert report["emission_calculation_status"] == "predefined_demo_value"
     line = report["line_items"][0]
     assert report["source"]["label"] == "synthetic_demo"
     assert line["emission_calculation"] is None
@@ -767,6 +979,12 @@ def test_upload_calculates_line_and_preserves_ai_and_engine_fields(monkeypatch):
     assert payload["emission_calculation_status"] == "complete"
     assert payload["warnings"] == ["Original AI warning"]
     assert calls == [("electricity_grid", 100, "kWh")]
+
+    report_response = client.get(
+        f"/api/invoices/{payload['invoice_id']}/report"
+    )
+    assert report_response.status_code == 200
+    assert report_response.json()["emission_calculation_status"] == "complete"
 
 
 @pytest.mark.parametrize(
@@ -1016,7 +1234,11 @@ def test_low_confidence_requires_review(monkeypatch):
     response = _upload_ai_result(
         monkeypatch,
         _ai_result([_line_item(confidence=0.42, confidence_flag="low")]),
-        lambda *args: {"emissions": 71.0},
+        lambda *args: {
+            "emissions": 71.0,
+            "emissions_basis": "CO2e",
+            "emissions_unit": "kg CO2e",
+        },
     )
 
     result_item = response.json()["result"]["line_items"][0]
@@ -1026,11 +1248,38 @@ def test_low_confidence_requires_review(monkeypatch):
     assert result_item["review_reasons"] == ["AI confidence is low."]
 
 
+@pytest.mark.parametrize(
+    "calculation",
+    [
+        {"emissions": math.inf, "emissions_basis": "CO2e", "emissions_unit": "kg CO2e"},
+        {"emissions": 71.0, "emissions_basis": "CO2e", "emissions_unit": "kg CO2"},
+        {"emissions": -1.0, "emissions_basis": "CO2", "emissions_unit": "kg CO2"},
+    ],
+)
+def test_invalid_engine_results_are_skipped_for_review(monkeypatch, calculation):
+    response = _upload_ai_result(
+        monkeypatch,
+        _ai_result([_line_item()]),
+        lambda *args: calculation,
+    )
+
+    result_item = response.json()["result"]["line_items"][0]
+    assert response.status_code == 200
+    assert result_item["calculation_status"] == "skipped"
+    assert result_item["emission_calculation"] is None
+    assert result_item["review_required"] is True
+    assert result_item["calculation_reason"] == "The emission engine returned an invalid result."
+
+
 def test_calculation_failure_does_not_fail_other_line_or_invoice(monkeypatch):
     def calculate(category, quantity, unit):
         if category == "electricity_grid":
             raise ValueError("No emission factor found")
-        return {"emissions": 12.0, "emissions_unit": "kg CO2e"}
+        return {
+            "emissions": 12.0,
+            "emissions_basis": "CO2e",
+            "emissions_unit": "kg CO2e",
+        }
 
     result = _ai_result(
         [
@@ -1050,3 +1299,9 @@ def test_calculation_failure_does_not_fail_other_line_or_invoice(monkeypatch):
     ]
     assert payload["warnings"][0] == "Original AI warning"
     assert any("No emission factor" in warning for warning in payload["warnings"])
+
+    report_response = client.get(
+        f"/api/invoices/{payload['invoice_id']}/report"
+    )
+    assert report_response.status_code == 200
+    assert report_response.json()["emission_calculation_status"] == "partial"

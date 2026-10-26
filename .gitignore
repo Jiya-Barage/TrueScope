@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local invoice database
+/database/truescope.sqlite3
+/database/truescope.sqlite3-*

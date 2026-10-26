@@ -27,6 +27,20 @@ FLAG_THRESHOLDS = {
 # Penalty applied when quantity * rate deviates significantly from amount (> 2%)
 RATE_MISMATCH_PENALTY: float = 0.40
 
+# Canonical expected units per activity category expected by the Emission Engine
+EXPECTED_UNITS_BY_CATEGORY: Dict[str, str] = {
+    "electricity_grid": "kWh",
+    "natural_gas": "kWh",
+    "freight_transport": "tonne-km",
+    "waste_disposal": "tonne",
+    "business_travel": "passenger-km",
+    "mobile_fuel_diesel": "litre",
+    "stationary_fuel_diesel": "litre",
+    "mobile_fuel_petrol": "litre",
+    "purchased_goods": "kg",
+    "water_effluent": "m3",
+}
+
 # Domain mapping of expected plausible units per category
 PLAUSIBLE_UNITS_BY_CATEGORY: Dict[str, Set[str]] = {
     "stationary_fuel_diesel": {"litre", "litres", "liter", "liters", "gallons", "l", "gal"},
@@ -34,10 +48,11 @@ PLAUSIBLE_UNITS_BY_CATEGORY: Dict[str, Set[str]] = {
     "mobile_fuel_petrol": {"litre", "litres", "liter", "liters", "gallons", "l", "gal"},
     "natural_gas": {"kwh", "m3", "therms"},
     "electricity_grid": {"kwh", "mwh", "units"},
-    "freight_transport": {"tonne.km", "km", "miles", "tonnes", "kg", "trip", "nos"},
-    "business_travel": {"km", "miles", "passenger.km", "trip", "nos"},
-    "purchased_goods": {"kg", "units", "tonnes", "items", "nos", "reams"},
-    "waste_disposal": {"tonnes", "kg", "litres", "litre", "m3", "month"},
+    "freight_transport": {"tonne-km", "tonne.km", "km", "miles", "tonnes", "tonne", "kg", "trip", "nos"},
+    "business_travel": {"passenger-km", "passenger.km", "km", "miles", "trip", "nos"},
+    "purchased_goods": {"kg", "units", "tonnes", "tonne", "items", "nos", "reams"},
+    "waste_disposal": {"tonne", "tonnes", "kg", "litres", "litre", "m3", "month"},
+    "water_effluent": {"m3", "m^3", "m³", "litres", "litre", "kl", "gallons"},
 }
 
 
@@ -99,17 +114,36 @@ def _calculate_ocr_score(
     return 0.70, "OCR confidence not recorded"
 
 
-def _calculate_completeness(line_item: Dict[str, Any]) -> tuple[float, List[str]]:
+def _calculate_completeness(line_item: Dict[str, Any], category: str = "") -> tuple[float, List[str]]:
     """Check completeness of essential fields (description, quantity, unit, amount).
 
     Args:
         line_item: Extracted line item dict.
+        category: Activity category string.
 
     Returns:
         Tuple of (completeness score 0.0 to 1.0, list of notes).
     """
     points = 0.0
     notes = []
+
+    # Non-emission lines are financial charges (taxes, fees, discounts)
+    if category == "non_emission":
+        desc = line_item.get("description")
+        if desc and str(desc).strip():
+            points += 0.50
+        else:
+            notes.append("Missing item description")
+
+        amt = line_item.get("amount")
+        if amt is not None:
+            points += 0.50
+        else:
+            notes.append("Missing financial amount")
+
+        if points == 1.0:
+            notes.append("All applicable line item fields present")
+        return points, notes
 
     # 1. Description (0.25)
     desc = line_item.get("description")
@@ -178,20 +212,33 @@ def _calculate_sanity(
     category = classification.get("category", "unknown")
     unit = (line_item.get("unit") or "").lower()
 
+    if category == "non_emission":
+        return 1.0, "Non-emission activity; no emission calculation applies"
+
     if category == "unknown":
         return 0.30, "Unclassified category; unable to verify physical units"
 
     plausible = PLAUSIBLE_UNITS_BY_CATEGORY.get(category)
-    if not plausible:
-        return 0.70, f"No unit restrictions defined for {category}"
+    expected = EXPECTED_UNITS_BY_CATEGORY.get(category)
 
     if not unit:
         return 0.50, f"No unit provided; spend-based emission calculation may be needed for {category}"
 
-    if unit in plausible:
-        return 1.0, f"Unit '{unit}' is physically plausible for {category}"
+    # If category has an expected unit defined by emission engine
+    if expected:
+        if unit == expected.lower():
+            return 1.0, f"Unit '{unit}' is physically plausible for {category}"
+        if plausible and unit in plausible:
+            # Unit differs from expected unit, but is plausible: do not penalize heavily
+            return 0.90, f"Unit '{unit}' differs from the emission engine's expected unit '{expected}'; engine will return a warning"
+        return 0.10, f"Warning: Unit '{unit}' is unexpected for activity category '{category}'"
 
-    return 0.10, f"Warning: Unit '{unit}' is unexpected for activity category '{category}'"
+    if plausible:
+        if unit in plausible:
+            return 1.0, f"Unit '{unit}' is physically plausible for {category}"
+        return 0.10, f"Warning: Unit '{unit}' is unexpected for activity category '{category}'"
+
+    return 0.70, f"No unit restrictions defined for {category}"
 
 
 def score(
@@ -220,14 +267,20 @@ def score(
         reasons.append(ocr_note)
 
     # 2. Completeness sub-score
-    comp_score, comp_notes = _calculate_completeness(line_item)
+    category = classification.get("category", "")
+    comp_score, comp_notes = _calculate_completeness(line_item, category=category)
     reasons.extend(comp_notes)
 
     # 3. Classification match strength
     match_score = float(classification.get("match_strength", 0.0))
-    class_reason = classification.get("reason")
-    if class_reason:
-        reasons.append(class_reason)
+    class_reasons = classification.get("reasons")
+    if class_reasons and isinstance(class_reasons, list):
+        for cr in class_reasons:
+            if cr and cr not in reasons:
+                reasons.append(cr)
+    elif classification.get("reason"):
+        if classification["reason"] not in reasons:
+            reasons.append(classification["reason"])
 
     # 4. Domain sanity check
     sanity_score, sanity_note = _calculate_sanity(line_item, classification)

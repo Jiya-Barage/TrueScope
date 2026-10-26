@@ -55,14 +55,14 @@ export const EmissionsView = () => {
       <div className="emissions-header-banner">
         <div>
           <div className="emissions-tag-row">
-            <DemoPill label="GHG PROTOCOL ALIGNED" />
+            <DemoPill label="DEMO CALCULATIONS • FACTORS UNVERIFIED" />
             <span className="emissions-facility-tag">
               Baseline Year: {company.baselineYear} • Reporting Year: {company.reportingYear}
             </span>
           </div>
           <h2 className="emissions-title">Greenhouse Gas (GHG) Scope Breakdown</h2>
           <p className="emissions-desc">
-            Granular accounting categorized per the Greenhouse Gas Protocol Corporate Accounting and Reporting Standard.
+            Eligible uploaded CO₂e calculations only; synthetic demo rows, CO₂-only results, and ineligible calculations are excluded. Scope classification and factor evidence have not been independently validated.
           </p>
         </div>
       </div>

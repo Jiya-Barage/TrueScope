@@ -4,23 +4,25 @@ import {
   DownloadIcon,
   CheckCircleIcon,
 } from '../components/common/Icons';
-import { formatEmissions, formatNumber, formatDate } from '../utils/formatters';
-import { generateEmissionsCSV, downloadCSV } from '../utils/csvExporter';
+import { formatNumber, formatDate } from '../utils/formatters';
+import {
+  createReportFilename,
+  generateEmissionsCSV,
+  downloadCSV,
+} from '../utils/csvExporter';
 import { useTrueScope } from '../context/TrueScopeContext';
 
 export const ReportsView = () => {
   const { invoices, stats, company } = useTrueScope();
   const [downloadSuccess, setDownloadSuccess] = useState(false);
-  const [reportPeriod, setReportPeriod] = useState('2024-YTD');
 
   const handleDownloadCSV = () => {
     const csvData = generateEmissionsCSV(invoices, {
       name: company.name,
-      reportingPeriod: reportPeriod === '2024-YTD' ? '2024 YTD (Jan - Oct)' : 'Q3 2024',
+      reportingPeriod: 'All available demo and uploaded records',
     });
 
-    const dateStr = new Date().toISOString().split('T')[0];
-    const filename = `truescope-emissions-report-${company.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${dateStr}.csv`;
+    const filename = createReportFilename(company.name);
 
     downloadCSV(csvData, filename);
 
@@ -43,21 +45,11 @@ export const ReportsView = () => {
           </div>
           <h2 className="reports-title">Carbon Footprint Reports & Data Export</h2>
           <p className="reports-subtitle">
-            Generate audit-ready GHG Protocol summary reports for enterprise buyers, lenders, and sustainability disclosures.
+            Uploaded invoice totals include eligible CO₂e calculations only. Synthetic demo values are shown separately; skipped and CO₂-only calculations are excluded and disclosed below.
           </p>
         </div>
 
         <div className="reports-actions-group">
-          <select
-            className="report-period-select"
-            value={reportPeriod}
-            onChange={(e) => setReportPeriod(e.target.value)}
-          >
-            <option value="2024-YTD">Reporting Period: 2024 YTD</option>
-            <option value="2024-Q3">Reporting Period: Q3 2024</option>
-            <option value="2024-Q2">Reporting Period: Q2 2024</option>
-          </select>
-
           <button
             type="button"
             className="btn btn-secondary"
@@ -81,7 +73,7 @@ export const ReportsView = () => {
       {downloadSuccess && (
         <div className="download-toast">
           <CheckCircleIcon size={18} />
-          <span>Report CSV downloaded successfully! Contains all {invoices.length} extracted line items.</span>
+          <span>Report CSV downloaded successfully! Contains all {invoices.length} available rows.</span>
         </div>
       )}
 
@@ -100,7 +92,7 @@ export const ReportsView = () => {
             </div>
             <div className="paper-meta-row">
               <span className="meta-label">Reporting Period:</span>
-              <span className="meta-val">{reportPeriod === '2024-YTD' ? 'Jan 01, 2024 - Oct 10, 2024' : 'Q3 2024'}</span>
+              <span className="meta-val">All loaded records; no date filter</span>
             </div>
             <div className="paper-meta-row">
               <span className="meta-label">Generated:</span>
@@ -128,8 +120,8 @@ export const ReportsView = () => {
               <span className="boundary-val">42 Full-Time Employees</span>
             </div>
             <div className="boundary-item">
-              <span className="boundary-lbl">Standard:</span>
-              <span className="boundary-val">GHG Protocol Corporate Standard (Operational Control)</span>
+              <span className="boundary-lbl">Scope basis:</span>
+              <span className="boundary-val">Demo classifications; methodology not independently validated</span>
             </div>
           </div>
         </div>
@@ -155,7 +147,7 @@ export const ReportsView = () => {
                     <strong>Direct Emissions</strong>
                   </div>
                 </td>
-                <td>Fleet Diesel, Facility Natural Gas</td>
+                <td>Eligible uploaded Scope 1 calculations only</td>
                 <td>{formatNumber(stats.scope1Kg)} kg</td>
                 <td>{(stats.scope1Kg / 1000).toFixed(2)} t</td>
                 <td>{stats.scope1Pct.toFixed(1)}%</td>
@@ -167,7 +159,7 @@ export const ReportsView = () => {
                     <strong>Indirect (Purchased Electricity)</strong>
                   </div>
                 </td>
-                <td>Facility Electric Power (Grid Average)</td>
+                <td>Eligible uploaded Scope 2 calculations only</td>
                 <td>{formatNumber(stats.scope2Kg)} kg</td>
                 <td>{(stats.scope2Kg / 1000).toFixed(2)} t</td>
                 <td>{stats.scope2Pct.toFixed(1)}%</td>
@@ -179,14 +171,14 @@ export const ReportsView = () => {
                     <strong>Value Chain Emissions</strong>
                   </div>
                 </td>
-                <td>Freight Shipping, Packaging, Travel, Waste</td>
+                <td>Eligible uploaded Scope 3 calculations only</td>
                 <td>{formatNumber(stats.scope3Kg)} kg</td>
                 <td>{(stats.scope3Kg / 1000).toFixed(2)} t</td>
                 <td>{stats.scope3Pct.toFixed(1)}%</td>
               </tr>
               <tr className="paper-table-total-row">
                 <td colSpan="2">
-                  <strong>Total Gross Estimated Emissions</strong>
+                  <strong>Uploaded CO₂e subtotal</strong>
                 </td>
                 <td>
                   <strong>{formatNumber(stats.totalEmissionsKg)} kg</strong>
@@ -195,67 +187,54 @@ export const ReportsView = () => {
                   <strong>{(stats.totalEmissionsKg / 1000).toFixed(2)} t</strong>
                 </td>
                 <td>
-                  <strong>100.0%</strong>
+                  <strong>{stats.totalEmissionsKg > 0 ? '100.0%' : '0.0%'}</strong>
                 </td>
+              </tr>
+              <tr>
+                <td colSpan="2">
+                  <strong>Synthetic demo subtotal (excluded from uploaded totals)</strong>
+                </td>
+                <td>{formatNumber(stats.demoTotalEmissionsKg)} kg</td>
+                <td>{(stats.demoTotalEmissionsKg / 1000).toFixed(2)} t</td>
+                <td>—</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* Section 3: Intensity Metrics */}
+        {/* Section 3: Calculation coverage */}
         <div className="report-paper-section">
-          <h3 className="section-title">3. SME Carbon Intensity Metrics</h3>
+          <h3 className="section-title">3. Calculation Coverage & Trust</h3>
           <div className="intensity-grid">
             <div className="intensity-card">
-              <span className="intensity-label">Per Employee</span>
-              <strong className="intensity-val">
-                {formatNumber(stats.totalEmissionsKg / 42, 1)} kg CO₂e
-              </strong>
-              <span className="intensity-sub">Based on 42 full-time staff</span>
+              <span className="intensity-label">Uploaded rows excluded from totals</span>
+              <strong className="intensity-val">{stats.ineligibleLineCount}</strong>
+              <span className="intensity-sub">{stats.skippedLineCount} skipped; other rows were not eligible CO₂e calculations</span>
             </div>
             <div className="intensity-card">
-              <span className="intensity-label">Per Processed Invoice</span>
-              <strong className="intensity-val">
-                {formatNumber(stats.invoiceCount > 0 ? stats.totalEmissionsKg / stats.invoiceCount : 0, 0)} kg CO₂e
-              </strong>
-              <span className="intensity-sub">Across {stats.invoiceCount} invoices</span>
+              <span className="intensity-label">CO₂-only uploaded rows</span>
+              <strong className="intensity-val">{stats.co2OnlyLineCount}</strong>
+              <span className="intensity-sub">Kept distinct; not added to CO₂e totals</span>
             </div>
             <div className="intensity-card">
-              <span className="intensity-label">Avg AI Confidence</span>
-              <strong className="intensity-val">{stats.averageConfidence}%</strong>
-              <span className="intensity-sub">Automated OCR & Mapping</span>
+              <span className="intensity-label">Unverified uploaded calculations</span>
+              <strong className="intensity-val">{stats.unverifiedCalculationCount}</strong>
+              <span className="intensity-sub">Factor evidence remains a review item</span>
+            </div>
+            <div className="intensity-card">
+              <span className="intensity-label">Predefined demo rows</span>
+              <strong className="intensity-val">{stats.demoRowCount}</strong>
+              <span className="intensity-sub">Synthetic values, not engine calculations</span>
             </div>
           </div>
         </div>
 
-        {/* Section 4: Recommended SME Reductions */}
+        {/* Section 4: Limitations */}
         <div className="report-paper-section">
-          <h3 className="section-title">4. High-Impact Decarbonization Roadmap</h3>
-          <div className="recommendations-list">
-            <div className="rec-item">
-              <div className="rec-num">1</div>
-              <div className="rec-text">
-                <strong>Transition Facility Power to Green Renewable Tariffs (Scope 2)</strong>
-                <p>Purchased electricity represents {stats.scope2Pct.toFixed(1)}% of your footprint. Switching to certified renewable electricity eliminates up to {formatNumber(stats.scope2Kg)} kg CO₂e annually.</p>
-              </div>
-            </div>
-
-            <div className="rec-item">
-              <div className="rec-num">2</div>
-              <div className="rec-text">
-                <strong>Fleet Electrification & Route Optimization (Scope 1)</strong>
-                <p>Delivery van diesel fuel contributes {formatEmissions(stats.scope1Kg)}. Phased transition to electric commercial vans will reduce direct transport emissions by 75%.</p>
-              </div>
-            </div>
-
-            <div className="rec-item">
-              <div className="rec-num">3</div>
-              <div className="rec-text">
-                <strong>Supplier Engagement for Packaging & Low-Carbon Freight (Scope 3)</strong>
-                <p>Switching corrugated boxes to 100% post-consumer recycled fiber lowers packaging footprint by an estimated 32%.</p>
-              </div>
-            </div>
-          </div>
+          <h3 className="section-title">4. Review Before Use</h3>
+          <p>
+            The uploaded summary excludes synthetic demo rows, CO₂-only results, skipped or failed calculations, and rows without a compatible CO₂e result. The synthetic demo subtotal is displayed separately and is not an uploaded invoice result. Review each uploaded line item and its factor provenance; unsupported rows are not estimated from invoice price.
+          </p>
         </div>
 
         {/* Section 5: Notice & Audit Disclaimer */}
@@ -264,9 +243,9 @@ export const ReportsView = () => {
             <strong>DEMONSTRATION PROTOTYPE NOTICE & DISCLAIMER</strong>
             <p>
               This document was generated locally by the TrueScope SME Carbon Accounting Frontend MVP.
-              The emission factors, classifications, and carbon calculations contained herein are mock demonstration values
-              intended solely for technical review and hackathon demonstration. They do not constitute certified regulatory
-              filings (SEC, CSRD, or ISO 14064-1) without formal verification against certified factor databases and independent auditing.
+              Preloaded rows contain synthetic mock values. Uploaded rows use the local demo factor library where a category and unit match;
+              those factors remain unverified and may be unsupported for the invoice geography or reporting year. This preview is not a certified
+              regulatory filing (SEC, CSRD, or ISO 14064-1).
             </p>
           </div>
         </div>

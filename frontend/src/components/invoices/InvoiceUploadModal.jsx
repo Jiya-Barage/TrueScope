@@ -195,21 +195,33 @@ export const InvoiceUploadModal = () => {
         )}
 
         {uploadResponse && (() => {
-          const lineItems = uploadResponse.result?.line_items;
-          const lineItemCount = Array.isArray(lineItems) ? lineItems.length : 0;
+          const lineItems = Array.isArray(uploadResponse.result?.line_items)
+            ? uploadResponse.result.line_items
+            : [];
+          const lineItemCount = lineItems.length;
           const warnings = Array.isArray(uploadResponse.result?.warnings)
             ? uploadResponse.result.warnings
             : [];
+          const calculationStatus =
+            uploadResponse.result?.emission_calculation_status;
+          const skippedCount = lineItems.filter(
+            (line) => line.calculation_status === 'skipped',
+          ).length;
+          const resultMessage = calculationStatus === 'partial'
+            ? `Invoice processing completed with partial emission calculations. ${skippedCount} line item(s) could not be calculated and require review.`
+            : calculationStatus === 'not_applicable'
+              ? 'Invoice processing completed; no emission calculations were applicable.'
+              : lineItemCount > 0
+                ? `Invoice processing completed. ${lineItemCount} line item(s) are available in the invoice list.`
+                : 'Invoice processing completed. No line items were extracted.';
 
           return (
             <>
               <div className="download-toast" role="status">
-                {lineItemCount > 0
-                  ? `Upload processed successfully. Invoice ID: ${uploadResponse.invoice_id || 'Unavailable'}. ${lineItemCount} line item(s) are available in the invoice list.`
-                  : `Upload processing completed. Invoice ID: ${uploadResponse.invoice_id || 'Unavailable'}. No line items were extracted.`}
+                {resultMessage} Invoice ID: {uploadResponse.invoice_id || 'Unavailable'}.
                 {' '}The raw response is retained in this modal.
               </div>
-              {lineItemCount === 0 && warnings.length > 0 && (
+              {warnings.length > 0 && (
                 <ul role="status">
                   {warnings.map((warning, index) => (
                     <li key={`upload-warning-${index}`}>{warning}</li>

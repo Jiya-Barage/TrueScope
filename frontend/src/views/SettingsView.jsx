@@ -11,6 +11,7 @@ import { useTrueScope } from '../context/TrueScopeContext';
 export const SettingsView = () => {
   const { company, setCompany, resetDemoData, deleteInvoice, invoices } = useTrueScope();
   const [saveToast, setSaveToast] = useState(false);
+  const [clearError, setClearError] = useState('');
 
   // Form local state
   const [formData, setFormData] = useState({
@@ -36,9 +37,16 @@ export const SettingsView = () => {
   };
 
   // Allow tester to test empty state
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (window.confirm('Clear all invoices to test empty state? You can restore them anytime.')) {
-      invoices.forEach((inv) => deleteInvoice(inv.id));
+      setClearError('');
+      try {
+        await Promise.all(invoices.map((invoice) => deleteInvoice(invoice.id)));
+      } catch (error) {
+        setClearError(
+          error instanceof Error ? error.message : 'Could not clear all invoices.',
+        );
+      }
     }
   };
 
@@ -60,6 +68,7 @@ export const SettingsView = () => {
           <span>Settings saved successfully!</span>
         </div>
       )}
+      {clearError && <div className="error-banner" role="alert">{clearError}</div>}
 
       <form onSubmit={handleSave} className="settings-form">
         {/* Organization Information */}

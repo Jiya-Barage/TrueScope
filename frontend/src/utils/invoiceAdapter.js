@@ -71,6 +71,13 @@ export function adaptUploadedInvoice(response) {
       emissionFactorNote: calculation?.validation_status ?? null,
       emissionFactorSource: calculation?.factor_source ?? null,
       emissionFactorSourceYear: calculation?.source_year ?? null,
+      emissionFactorGeography:
+        calculation?.trust_metadata?.geography ?? null,
+      emissionFactorLibraryDefaultGeography:
+        calculation?.trust_metadata?.library_default_geography ?? null,
+      emissionFactorProvenance: calculation?.factor_provenance ?? null,
+      emissionFactorVerified:
+        calculation?.trust_metadata?.factor_verified === true,
       calculatedEmissionsKg,
       emissionsValue,
       emissionsUnit,
@@ -82,6 +89,7 @@ export function adaptUploadedInvoice(response) {
       reviewReasons: Array.isArray(line.review_reasons) ? line.review_reasons : [],
       reasons: Array.isArray(line.reasons) ? line.reasons : [],
       processingStatus: invoice.processing_status ?? response.status,
+      emissionCalculationStatus: invoice.emission_calculation_status ?? null,
       status: response.status === 'completed' ? 'Processed' : response.status,
       source: invoice.source ?? null,
     };

@@ -18,6 +18,7 @@ export const OverviewView = () => {
     stats,
     monthlyTrends,
     invoices,
+    backendLoadError,
     company,
     openUploadModal,
     setActiveScreen,
@@ -25,6 +26,11 @@ export const OverviewView = () => {
 
   return (
     <div className="view-container overview-view">
+      {backendLoadError && (
+        <div className="error-banner" role="status">
+          Saved backend invoices could not be restored. {backendLoadError}
+        </div>
+      )}
       {/* Top Welcome / Demo Banner */}
       <div className="overview-welcome-banner">
         <div className="welcome-banner-text">
@@ -36,8 +42,8 @@ export const OverviewView = () => {
           </div>
           <h2 className="welcome-heading">SME Greenhouse Gas Overview</h2>
           <p className="welcome-desc">
-            Aggregated carbon footprint calculated from supplier invoices and utility meters.
-            Classified per the Greenhouse Gas Protocol Corporate Standard.
+            Uploaded invoice calculation results are shown separately from synthetic sample data.
+            Review factor provenance and verification status before interpreting any estimate.
           </p>
         </div>
 
@@ -56,11 +62,10 @@ export const OverviewView = () => {
       {/* KPI Cards Row */}
       <div className="kpi-grid">
         <MetricCard
-          title="Total Estimated Emissions"
+          title="Uploaded CO₂e Results"
           value={formatEmissions(stats.totalEmissionsKg)}
-          subvalue={`${(stats.totalEmissionsKg / 1000).toFixed(2)} metric tons CO₂e`}
-          trend="-4.2%"
-          trendLabel="vs last month"
+          subvalue={`${(stats.totalEmissionsKg / 1000).toFixed(2)} metric tons CO₂e; excludes demo and ineligible rows`}
+          trendLabel="Unverified estimates; review factor evidence"
           icon={TrendingDownIcon}
           badge={<DemoPill label="ESTIMATE" />}
         />
@@ -93,11 +98,11 @@ export const OverviewView = () => {
         />
 
         <MetricCard
-          title="Processed Invoices"
+          title="Uploaded Invoices"
           value={`${stats.invoiceCount}`}
-          subvalue={`Avg Confidence: ${stats.averageConfidence}%`}
+          subvalue={`Average extraction confidence: ${stats.averageConfidence}%`}
           icon={FileTextIcon}
-          trendLabel="100% matched to factors"
+          trendLabel={`${stats.skippedLineCount} uploaded line(s) skipped`}
         />
       </div>
 
@@ -105,7 +110,7 @@ export const OverviewView = () => {
       <div className="charts-split-grid">
         <Card
           title="Monthly Emissions Trend (kg CO₂e)"
-          subtitle="Historical and current month emissions split by Scope 1, 2, and 3"
+          subtitle="Static synthetic demo trend; uploaded invoices are not included"
           className="chart-card-trend"
         >
           <MonthlyTrendChart data={monthlyTrends} />
@@ -113,7 +118,7 @@ export const OverviewView = () => {
 
         <Card
           title="Emissions by Category"
-          subtitle="Relative contribution of SME activities to total footprint"
+          subtitle="Eligible uploaded CO₂e calculations only; synthetic demo rows excluded"
           className="chart-card-category"
         >
           <CategoryDonutChart
@@ -125,14 +130,14 @@ export const OverviewView = () => {
       {/* Recent Invoices Activity Section */}
       <Card
         title="Recent Invoice Activity"
-        subtitle="Latest vendor invoices processed by TrueScope OCR and classification"
+        subtitle="Uploaded invoices and clearly marked synthetic demo rows"
         headerAction={
           <button
             type="button"
             className="btn btn-ghost"
             onClick={() => setActiveScreen('invoices')}
           >
-            <span>View All ({stats.invoiceCount})</span>
+            <span>View All ({invoices.length})</span>
             <SparklesIcon size={16} />
           </button>
         }
@@ -151,10 +156,10 @@ export const OverviewView = () => {
           <InfoIcon size={18} />
         </div>
         <div className="methodology-text">
-          <strong>GHG Protocol Alignment & Demo Factor Notice:</strong>
+          <strong>Calculation Basis & Demo Factor Notice:</strong>
           <span>
-            TrueScope applies activity-based emission modeling: <code>Activity Quantity × Emission Factor = kg CO₂e</code>.
-            Preloaded demo invoices use mock factors; uploaded rows show backend calculation units and review status.
+            Activity quantity × emission factor produces emissions in that factor's reported basis and unit; CO₂ is not treated as CO₂e.
+            Synthetic demo values are excluded from uploaded totals. Uploaded CO₂-only, skipped, failed, or otherwise ineligible rows are excluded from CO₂e totals; uploaded factor values remain unverified unless evidence is established.
           </span>
         </div>
       </div>
