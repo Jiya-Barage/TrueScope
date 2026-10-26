@@ -757,3 +757,386 @@ def test_parser_does_not_invent_missing_currency():
     from ai.parsing.parser import extract_currency
 
     assert extract_currency("Invoice total: 2419") is None
+
+
+# ---------------------------------------------------------------------------
+# Task: Non-Emission Priority & Emission Category Preservation Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("desc", "expected_category"),
+    [
+        ("Courier service charges", "freight_transport"),
+        ("Waste disposal service charges", "waste_disposal"),
+        ("Taxi service charges", "business_travel"),
+        ("Freight service charges", "freight_transport"),
+        ("Freight charges Pune to Mumbai", "freight_transport"),
+        ("Electricity consumption charges", "electricity_grid"),
+    ],
+)
+def test_emission_keywords_beat_generic_charges(desc, expected_category):
+    """Test 1: Emission lines with generic charge phrasing classify as emission categories."""
+    res = classify({"description": desc})
+    assert res["category"] == expected_category
+    assert res["scope"] is not None
+    # Weak non-emission word was ignored, so reason must state priority
+    reasons_pool = (res.get("reasons", []) or []) + [res.get("reason", "")]
+    assert any("Emission keyword takes priority over generic charge wording" in r for r in reasons_pool)
+
+
+@pytest.mark.parametrize(
+    "desc",
+    [
+        "Fixed demand charges",
+        "Electricity fixed charges",
+        "GST 18%",
+        "Late payment fee",
+        "Rounding off",
+        "Service charges",
+        "Processing fee",
+    ],
+)
+def test_strong_and_uncontested_weak_non_emission(desc):
+    """Test 2: Strong non-emission keywords and generic charges without emission keywords -> non_emission."""
+    res = classify({"description": desc})
+    assert res["category"] == "non_emission"
+    assert res["scope"] is None
+    assert "non-emission" in res["reason"].lower()
+
+
+def test_unrecognized_description_stays_unknown():
+    """Test 3: 'Blorp zint widget' -> unknown and never non_emission."""
+    res = classify({"description": "Blorp zint widget"})
+    assert res["category"] == "unknown"
+    assert res["category"] != "non_emission"
+    assert res["scope"] is None
+    assert res["match_strength"] == 0.0
+
+
+DOCUMENTED_TAXONOMY = {
+    "natural_gas",
+    "stationary_fuel_diesel",
+    "mobile_fuel_diesel",
+    "mobile_fuel_petrol",
+    "electricity_grid",
+    "freight_transport",
+    "business_travel",
+    "purchased_goods",
+    "waste_disposal",
+    "water_effluent",
+    "non_emission",
+    "unknown",
+}
+
+DOCUMENTED_SCOPES = {
+    "natural_gas": 1,
+    "stationary_fuel_diesel": 1,
+    "mobile_fuel_diesel": 1,
+    "mobile_fuel_petrol": 1,
+    "electricity_grid": 2,
+    "freight_transport": 3,
+    "business_travel": 3,
+    "purchased_goods": 3,
+    "waste_disposal": 3,
+    "water_effluent": 3,
+    "non_emission": None,
+    "unknown": None,
+}
+
+
+def test_scope_invariants_for_all_emittable_categories():
+    """Test 4: Scope invariants match docs/ai-output-schema.md for every emittable category."""
+    from ai.classification.classifier import CLASSIFICATION_RULES
+
+    for cat, config in CLASSIFICATION_RULES.items():
+        assert cat in DOCUMENTED_SCOPES, f"Category {cat} missing in DOCUMENTED_SCOPES"
+        assert config["scope"] == DOCUMENTED_SCOPES[cat], f"Scope mismatch for {cat}: {config['scope']} != {DOCUMENTED_SCOPES[cat]}"
+
+    # Also check unknown
+    res_unknown = classify({"description": "Unrecognized random text xyz 123"})
+    assert res_unknown["category"] == "unknown"
+    assert res_unknown["scope"] == DOCUMENTED_SCOPES["unknown"]
+
+
+def test_every_emittable_category_in_documented_taxonomy():
+    """Test 5: Every category the classifier can emit is in the documented taxonomy."""
+    from ai.classification.classifier import CLASSIFICATION_RULES
+
+    emittable_categories = set(CLASSIFICATION_RULES.keys()) | {"unknown"}
+    assert emittable_categories == DOCUMENTED_TAXONOMY
+
+
+def test_expected_unit_present_on_every_line_item(tmp_path):
+    """Test 6: expected_unit is always present (explicit null for non_emission and unknown) and separate from unit."""
+    dummy_invoice = tmp_path / "invoice.pdf"
+    dummy_invoice.write_bytes(b"%PDF-1.4 dummy")
+
+    mock_ocr = {
+        "text": (
+            "Test Supplier\n"
+            "Invoice No: INV-001\n"
+            "Date: 2026-10-01\n"
+            "Currency: INR\n"
+            "Electricity consumption 500 kWh 10.00 5000.00\n"
+            "Fixed demand charges 1 Month 1000.00 1000.00\n"
+            "Freight transport Pune to Mumbai 1 Trip 2000.00 2000.00\n"
+            "Blorp zint widget 5 Nos 100.00 500.00\n"
+        ),
+        "lines": [
+            {"text": "Test Supplier", "conf": 0.95},
+            {"text": "Invoice No: INV-001", "conf": 0.95},
+            {"text": "Date: 2026-10-01", "conf": 0.95},
+            {"text": "Currency: INR", "conf": 0.95},
+            {"text": "Electricity consumption 500 kWh 10.00 5000.00", "conf": 0.95},
+            {"text": "Fixed demand charges 1 Month 1000.00 1000.00", "conf": 0.95},
+            {"text": "Freight transport Pune to Mumbai 1 Trip 2000.00 2000.00", "conf": 0.95},
+            {"text": "Blorp zint widget 5 Nos 100.00 500.00", "conf": 0.95},
+        ],
+        "words": [],
+        "pages": 1,
+    }
+
+    with patch("ai.pipeline.extract", return_value=mock_ocr):
+        result = run(str(dummy_invoice))
+
+    assert len(result["line_items"]) == 4
+
+    # 1. electricity_grid -> expected_unit is "kWh", unit is "kwh"
+    item0 = result["line_items"][0]
+    assert item0["category"] == "electricity_grid"
+    assert "expected_unit" in item0
+    assert item0["expected_unit"] == "kWh"
+    assert item0["unit"].lower() == "kwh"
+
+    # 2. non_emission -> expected_unit is None, unit is "month"
+    item1 = result["line_items"][1]
+    assert item1["category"] == "non_emission"
+    assert "expected_unit" in item1
+    assert item1["expected_unit"] is None
+    assert item1["unit"].lower() == "month"
+
+    # 3. freight_transport -> expected_unit is "tonne-km", unit is "trip" (separate)
+    item2 = result["line_items"][2]
+    assert item2["category"] == "freight_transport"
+    assert "expected_unit" in item2
+    assert item2["expected_unit"] == "tonne-km"
+    assert item2["unit"].lower() == "trip"
+    assert item2["expected_unit"] != item2["unit"]
+
+    # 4. unknown -> expected_unit is None, unit is "nos"
+    item3 = result["line_items"][3]
+    assert item3["category"] == "unknown"
+    assert "expected_unit" in item3
+    assert item3["expected_unit"] is None
+    assert item3["unit"].lower() == "nos"
+
+
+def validate_output(output: dict) -> None:
+    """Test helper to validate pipeline output schema and domain invariants."""
+    # Top-level required keys and types
+    required_top = {
+        "invoice_id",
+        "source_file",
+        "vendor",
+        "invoice_date",
+        "invoice_number",
+        "currency",
+        "line_items",
+        "overall_confidence",
+        "warnings",
+    }
+    assert required_top.issubset(set(output.keys())), f"Missing keys: {required_top - set(output.keys())}"
+    assert isinstance(output["invoice_id"], str)
+    assert isinstance(output["source_file"], str)
+    assert output["vendor"] is None or isinstance(output["vendor"], str)
+    assert output["invoice_date"] is None or isinstance(output["invoice_date"], str)
+    assert output["invoice_number"] is None or isinstance(output["invoice_number"], str)
+    assert output["currency"] is None or isinstance(output["currency"], str)
+    assert isinstance(output["line_items"], list)
+    assert isinstance(output["overall_confidence"], (int, float))
+    assert 0.0 <= output["overall_confidence"] <= 1.0
+    assert isinstance(output["warnings"], list)
+    assert all(isinstance(w, str) for w in output["warnings"])
+
+    # Line item required keys and invariants
+    required_line_keys = {
+        "description",
+        "quantity",
+        "unit",
+        "amount",
+        "category",
+        "scope",
+        "confidence",
+        "confidence_flag",
+        "reasons",
+        "expected_unit",
+    }
+    for idx, item in enumerate(output["line_items"]):
+        assert required_line_keys.issubset(set(item.keys())), f"Line {idx} missing: {required_line_keys - set(item.keys())}"
+        assert isinstance(item["description"], str)
+        assert item["quantity"] is None or isinstance(item["quantity"], (int, float))
+        assert item["unit"] is None or isinstance(item["unit"], str)
+        assert item["amount"] is None or isinstance(item["amount"], (int, float))
+        assert item["category"] in DOCUMENTED_TAXONOMY, f"Line {idx} invalid category: {item['category']}"
+        assert item["scope"] in {1, 2, 3, None}, f"Line {idx} invalid scope: {item['scope']}"
+        assert item["scope"] == DOCUMENTED_SCOPES[item["category"]]
+        assert isinstance(item["confidence"], (int, float))
+        assert 0.0 <= item["confidence"] <= 1.0, f"Line {idx} confidence out of range: {item['confidence']}"
+        assert item["confidence_flag"] in {"high", "medium", "low"}
+
+        # confidence_flag thresholds: high >= 0.80, medium 0.50-0.79, low < 0.50
+        conf = item["confidence"]
+        flag = item["confidence_flag"]
+        if conf >= 0.80:
+            assert flag == "high", f"Expected high for {conf}, got {flag}"
+        elif conf >= 0.50:
+            assert flag == "medium", f"Expected medium for {conf}, got {flag}"
+        else:
+            assert flag == "low", f"Expected low for {conf}, got {flag}"
+
+        assert isinstance(item["reasons"], list)
+        assert all(isinstance(r, str) for r in item["reasons"])
+        assert "expected_unit" in item
+        if item["category"] in {"non_emission", "unknown"}:
+            assert item["expected_unit"] is None
+        else:
+            from ai.confidence.scorer import EXPECTED_UNITS_BY_CATEGORY
+            assert item["expected_unit"] == EXPECTED_UNITS_BY_CATEGORY[item["category"]]
+
+
+def test_validate_output_on_mocked_sample_invoices(tmp_path):
+    """Test 7: Run validate_output() on pipeline output built from mocked OCR text for the 3 sample invoices."""
+    mock_ocr_01 = {
+        "text": (
+            "Shree Ganesh Fuels & Logistics TAX INVOICE\n"
+            "Plot 14, MIDC Bhosari Invoice No: SGF/2026/0457\n"
+            "Pune, Maharashtra 411026 Date: 03-10-2026\n"
+            "GSTIN: 27ABCDE1234F1Z5\n"
+            "Bill To:\n"
+            "Greenleaf Packaging Pvt Ltd\n"
+            "Sector 7, Chakan, Pune 410501\n"
+            "Description Qty Unit Rate Amount (INR)\n"
+            "High Speed Diesel (HSD) for generator 250 Litre 92.40 23,100.00\n"
+            "Petrol - company vehicle 60 Litre 104.10 6,246.00\n"
+            "Freight transport Pune to Mumbai 1 Trip 8,500.00 8,500.00\n"
+            "Subtotal: 37,846.00\n"
+            "GST (18%): 6,812.28\n"
+            "Total: 44,658.28\n"
+        ),
+        "lines": [
+            {"text": "Shree Ganesh Fuels & Logistics TAX INVOICE", "conf": 0.95},
+            {"text": "Plot 14, MIDC Bhosari Invoice No: SGF/2026/0457", "conf": 0.93},
+            {"text": "Pune, Maharashtra 411026 Date: 03-10-2026", "conf": 0.96},
+            {"text": "GSTIN: 27ABCDE1234F1Z5", "conf": 0.84},
+            {"text": "Bill To:", "conf": 0.96},
+            {"text": "Greenleaf Packaging Pvt Ltd", "conf": 0.96},
+            {"text": "Sector 7, Chakan, Pune 410501", "conf": 0.94},
+            {"text": "Description Qty Unit Rate Amount (INR)", "conf": 0.96},
+            {"text": "High Speed Diesel (HSD) for generator 250 Litre 92.40 23,100.00", "conf": 0.95},
+            {"text": "Petrol - company vehicle 60 Litre 104.10 6,246.00", "conf": 0.95},
+            {"text": "Freight transport Pune to Mumbai 1 Trip 8,500.00 8,500.00", "conf": 0.96},
+            {"text": "Subtotal: 37,846.00", "conf": 0.96},
+            {"text": "GST (18%): 6,812.28", "conf": 0.96},
+            {"text": "Total: 44,658.28", "conf": 0.96},
+        ],
+        "words": [],
+        "pages": 1,
+    }
+
+    mock_ocr_02 = {
+        "text": (
+            "Western Maharashtra Power Distribution Co. TAX INVOICE\n"
+            "Rasta Peth Division Office Invoice No: ELEC/PN/10/883921\n"
+            "Pune, Maharashtra 411011 Date: 05-10-2026\n"
+            "GSTIN: 27PQRSX5678L1ZK\n"
+            "Bill To:\n"
+            "Greenleaf Packaging Pvt Ltd\n"
+            "Sector 7, Chakan, Pune 410501\n"
+            "Description Qty Unit Rate Amount (INR)\n"
+            "Electricity consumption - industrial LT 4820 kWh 9.35 45,067.00\n"
+            "Fixed demand charges 1 Month 3,200.00 3,200.00\n"
+            "Subtotal: 48,267.00\n"
+            "GST (18%): 8,688.06\n"
+            "Total: 56,955.06\n"
+        ),
+        "lines": [
+            {"text": "Western Maharashtra Power Distribution Co. TAX INVOICE", "conf": 0.96},
+            {"text": "Rasta Peth Division Office Invoice No: ELEC/PN/10/883921", "conf": 0.94},
+            {"text": "Pune, Maharashtra 411011 Date: 05-10-2026", "conf": 0.96},
+            {"text": "GSTIN: 27PQRSX5678L1ZK", "conf": 0.91},
+            {"text": "Bill To:", "conf": 0.96},
+            {"text": "Greenleaf Packaging Pvt Ltd", "conf": 0.96},
+            {"text": "Sector 7, Chakan, Pune 410501", "conf": 0.94},
+            {"text": "Description Qty Unit Rate Amount (INR)", "conf": 0.96},
+            {"text": "Electricity consumption - industrial LT 4820 kWh 9.35 45,067.00", "conf": 0.95},
+            {"text": "Fixed demand charges 1 Month 3,200.00 3,200.00", "conf": 0.95},
+            {"text": "Subtotal: 48,267.00", "conf": 0.96},
+            {"text": "GST (18%): 8,688.06", "conf": 0.95},
+            {"text": "Total: 56,955.06", "conf": 0.96},
+        ],
+        "words": [],
+        "pages": 1,
+    }
+
+    mock_ocr_03 = {
+        "text": (
+            "Ms Patil Enterprises TAX INVOICE\n"
+            "Shop 3, Market Yard Invoice No: PE-118\n"
+            "Pune 411037 Date: 07-10-2026\n"
+            "GSTIN: 27AAAPP99990122\n"
+            "Bill To:\n"
+            "Greenleaf Packaging Pvt ud\n"
+            "Chakan, Pune\n"
+            "Description Qty Unit Rate Amount (INR)\n"
+            "Diesel (bulk) tanker refill 400 Lr 91.80 36,720.00\n"
+            "Courier / parcel charges 12 Nos 145.00 4,740.00\n"
+            "Ad paper reams office supplies 40 Nos 235.00 9,400.00\n"
+            "Waste disposal service monthly 1 Month 2,800.00 2,800.00\n"
+            "Taxi hire for client visit 2 Trip 4,350.00. 2,700.00\n"
+            "Subtotal: 53,360.00\n"
+            "GST (18%): 9,604.80\n"
+            "Total: 62,964.80\n"
+        ),
+        "lines": [
+            {"text": "Ms Patil Enterprises TAX INVOICE", "conf": 0.92},
+            {"text": "Shop 3, Market Yard Invoice No: PE-118", "conf": 0.89},
+            {"text": "Pune 411037 Date: 07-10-2026", "conf": 0.90},
+            {"text": "GSTIN: 27AAAPP99990122", "conf": 0.59},
+            {"text": "Bill To:", "conf": 0.88},
+            {"text": "Greenleaf Packaging Pvt ud", "conf": 0.82},
+            {"text": "Chakan, Pune", "conf": 0.94},
+            {"text": "Description Qty Unit Rate Amount (INR)", "conf": 0.83},
+            {"text": "Diesel (bulk) tanker refill 400 Lr 91.80 36,720.00", "conf": 0.85},
+            {"text": "Courier / parcel charges 12 Nos 145.00 4,740.00", "conf": 0.89},
+            {"text": "Ad paper reams office supplies 40 Nos 235.00 9,400.00", "conf": 0.85},
+            {"text": "Waste disposal service monthly 1 Month 2,800.00 2,800.00", "conf": 0.84},
+            {"text": "Taxi hire for client visit 2 Trip 4,350.00. 2,700.00", "conf": 0.83},
+            {"text": "Subtotal: 53,360.00", "conf": 0.92},
+            {"text": "GST (18%): 9,604.80", "conf": 0.94},
+            {"text": "Total: 62,964.80", "conf": 0.95},
+        ],
+        "words": [],
+        "pages": 1,
+    }
+
+    dummy_f1 = tmp_path / "invoice_01.pdf"
+    dummy_f1.write_bytes(b"%PDF-1.4 dummy")
+    dummy_f2 = tmp_path / "invoice_02.pdf"
+    dummy_f2.write_bytes(b"%PDF-1.4 dummy")
+    dummy_f3 = tmp_path / "invoice_03.jpg"
+    dummy_f3.write_bytes(b"\xff\xd8\xff dummy")
+
+    with patch("ai.pipeline.extract", return_value=mock_ocr_01):
+        res1 = run(str(dummy_f1))
+        validate_output(res1)
+        assert len(res1["line_items"]) == 3
+
+    with patch("ai.pipeline.extract", return_value=mock_ocr_02):
+        res2 = run(str(dummy_f2))
+        validate_output(res2)
+        assert len(res2["line_items"]) == 2
+
+    with patch("ai.pipeline.extract", return_value=mock_ocr_03):
+        res3 = run(str(dummy_f3))
+        validate_output(res3)
+        assert len(res3["line_items"]) == 5
