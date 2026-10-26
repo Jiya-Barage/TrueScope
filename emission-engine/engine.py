@@ -176,13 +176,36 @@ def calculate_emissions(category, quantity, unit):
     verification_status = factor_record["verification_status"]
     factor_unit = factor_record["factor_unit"]
 
-    factor_verified = (
+    source = factor_record.get("source")
+    source_year = factor_record.get("source_year")
+    verification_evidence = factor_record.get("verification_evidence")
+
+    # This indicates declared verified status and complete evidence metadata.
+    # It does not establish scientific validity.
+    verified_status_and_evidence_complete = (
         verification_status == "verified"
-        and isinstance(factor_record.get("source"), str)
-        and bool(factor_record["source"].strip())
-        and isinstance(factor_record.get("source_year"), int)
-        and not isinstance(factor_record.get("source_year"), bool)
-        and factor_record["source_year"] > 0
+        and isinstance(source, str)
+        and bool(source.strip())
+        and isinstance(source_year, int)
+        and not isinstance(source_year, bool)
+        and source_year > 0
+        and isinstance(verification_evidence, dict)
+        and verification_evidence.get("reviewed") is True
+        and isinstance(
+            verification_evidence.get("reviewer"),
+            str,
+        )
+        and bool(verification_evidence["reviewer"].strip())
+        and isinstance(
+            verification_evidence.get("methodology"),
+            str,
+        )
+        and bool(verification_evidence["methodology"].strip())
+        and isinstance(
+            verification_evidence.get("review_date"),
+            str,
+        )
+        and bool(verification_evidence["review_date"].strip())
     )
 
     normalized_factor_unit = factor_unit.lower().replace(" ", "")
@@ -218,7 +241,7 @@ def calculate_emissions(category, quantity, unit):
             "verification_required": metadata.get(
                 "factor_verification_required", True
             ),
-            "factor_verified": factor_verified,
+            "factor_verified": verified_status_and_evidence_complete,
         },
     }
 

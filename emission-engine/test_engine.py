@@ -15,6 +15,7 @@ def make_factor(
     source=None,
     source_year=None,
     factor_unit="kg CO2/kWh",
+    verification_evidence=None,
 ):
     return {
         "category": "electricity_grid",
@@ -25,6 +26,7 @@ def make_factor(
         "source": source,
         "source_year": source_year,
         "verification_status": verification_status,
+        "verification_evidence": verification_evidence,
     }
 
 
@@ -130,7 +132,7 @@ class TestEmissionEngine(unittest.TestCase):
         )
         self.assertEqual(
             result["calculation"],
-            "100 kWh × 0.71 kg CO2/kWh",
+            "100 kWh \u00d7 0.71 kg CO2/kWh",
         )
 
     def test_result_contains_trust_metadata(self):
@@ -185,7 +187,7 @@ class TestEmissionEngine(unittest.TestCase):
             result["trust_metadata"]["factor_verified"]
         )
 
-    def test_verified_factor_requires_source_and_year(self):
+    def test_placeholder_source_and_year_are_not_verified(self):
         factor = make_factor(
             verification_status="verified",
             source="https://example.com/source",
@@ -197,7 +199,7 @@ class TestEmissionEngine(unittest.TestCase):
             100,
             "kWh",
         )
-        self.assertTrue(
+        self.assertFalse(
             result["trust_metadata"]["factor_verified"]
         )
 
@@ -206,6 +208,12 @@ class TestEmissionEngine(unittest.TestCase):
             verification_status="verified",
             source=None,
             source_year=2025,
+            verification_evidence={
+                "reviewed": True,
+                "reviewer": "Reviewer",
+                "methodology": "Methodology reviewed",
+                "review_date": "2026-10-24",
+            },
         )
         result = self.run_with_library(
             make_library([factor]),
@@ -222,6 +230,12 @@ class TestEmissionEngine(unittest.TestCase):
             verification_status="verified",
             source="https://example.com/source",
             source_year=None,
+            verification_evidence={
+                "reviewed": True,
+                "reviewer": "Reviewer",
+                "methodology": "Methodology reviewed",
+                "review_date": "2026-10-24",
+            },
         )
         result = self.run_with_library(
             make_library([factor]),
@@ -232,6 +246,130 @@ class TestEmissionEngine(unittest.TestCase):
         self.assertFalse(
             result["trust_metadata"]["factor_verified"]
         )
+
+    def test_verified_status_and_complete_evidence_mark_metadata_complete(self):
+        factor = make_factor(
+            verification_status="verified",
+            source="https://example.com/source",
+            source_year=2025,
+            verification_evidence={
+                "reviewed": True,
+                "reviewer": "Reviewer",
+                "methodology": "Methodology reviewed",
+                "review_date": "2026-10-24",
+            },
+        )
+        result = self.run_with_library(
+            make_library([factor]), "electricity_grid", 100, "kWh"
+        )
+        self.assertTrue(result["trust_metadata"]["factor_verified"])
+
+    def test_unverified_factor_stays_unverified_with_complete_evidence(self):
+        factor = make_factor(
+            source="https://example.com/source",
+            source_year=2025,
+            verification_evidence={
+                "reviewed": True,
+                "reviewer": "Reviewer",
+                "methodology": "Methodology reviewed",
+                "review_date": "2026-10-24",
+            },
+        )
+        result = self.run_with_library(
+            make_library([factor]), "electricity_grid", 100, "kWh"
+        )
+        self.assertEqual(
+            result["validation_status"], "unverified_demo_value"
+        )
+        self.assertFalse(result["trust_metadata"]["factor_verified"])
+
+    def test_incomplete_verification_evidence_is_not_verified(self):
+        factor = make_factor(
+            verification_status="verified",
+            source="https://example.com/source",
+            source_year=2025,
+            verification_evidence={
+                "reviewed": True,
+                "reviewer": "Reviewer",
+                "methodology": "",
+                "review_date": "2026-10-24",
+            },
+        )
+        result = self.run_with_library(
+            make_library([factor]),
+            "electricity_grid",
+            100,
+            "kWh",
+        )
+        self.assertFalse(
+            result["trust_metadata"]["factor_verified"]
+        )
+
+    def test_each_verification_evidence_field_is_required_and_well_formed(self):
+        complete_evidence = {
+            "reviewed": True,
+            "reviewer": "Reviewer",
+            "methodology": "Methodology reviewed",
+            "review_date": "2026-10-24",
+        }
+        missing_reviewed = {
+            key: value
+            for key, value in complete_evidence.items()
+            if key != "reviewed"
+        }
+        invalid_evidence_cases = [
+            ("reviewed missing", missing_reviewed),
+            ("reviewed false", {**complete_evidence, "reviewed": False}),
+            ("reviewed non-boolean", {**complete_evidence, "reviewed": 1}),
+        ]
+
+        for field in ("reviewer", "methodology", "review_date"):
+            missing = {
+                key: value
+                for key, value in complete_evidence.items()
+                if key != field
+            }
+            invalid_evidence_cases.extend(
+                (
+                    (f"{field} missing", missing),
+                    (f"{field} blank", {**complete_evidence, field: "  "}),
+                    (f"{field} wrong type", {**complete_evidence, field: 1}),
+                )
+            )
+
+        for case, verification_evidence in invalid_evidence_cases:
+            with self.subTest(case=case):
+                factor = make_factor(
+                    verification_status="verified",
+                    source="https://example.com/source",
+                    source_year=2025,
+                    verification_evidence=verification_evidence,
+                )
+                result = self.run_with_library(
+                    make_library([factor]), "electricity_grid", 100, "kWh"
+                )
+                self.assertFalse(result["trust_metadata"]["factor_verified"])
+
+    def test_boolean_and_non_positive_source_years_are_not_verified(self):
+        invalid_source_years = [True, False, 0, -1]
+
+        for source_year in invalid_source_years:
+            with self.subTest(source_year=source_year):
+                factor = make_factor(
+                    verification_status="verified",
+                    source="https://example.com/source",
+                    source_year=source_year,
+                    verification_evidence={
+                        "reviewed": True,
+                        "reviewer": "Reviewer",
+                        "methodology": "Methodology reviewed",
+                        "review_date": "2026-10-24",
+                    },
+                )
+                result = self.run_with_library(
+                    make_library([factor]), "electricity_grid", 100, "kWh"
+                )
+                self.assertFalse(result["trust_metadata"]["factor_verified"])
 
     def test_co2_factor_has_co2_label(self):
         result = self.run_with_library(
@@ -398,6 +536,25 @@ class TestEmissionEngine(unittest.TestCase):
                         quantity,
                         unit,
                     )
+
+    def test_requested_categories_have_no_matching_library_factors(self):
+        unsupported_cases = [
+            ("water_effluent", 10, "m³"),
+            ("mobile_fuel_diesel", 10, "litres"),
+            ("stationary_fuel_diesel", 10, "litres"),
+            ("purchased_goods", 10, "kg"),
+        ]
+
+        for category, quantity, unit in unsupported_cases:
+            with self.subTest(category=category, unit=unit):
+                with self.assertRaisesRegex(
+                    ValueError, "No emission factor found"
+                ):
+                    calculate_emissions(category, quantity, unit)
+
+    def test_incompatible_activity_unit_has_no_matching_factor(self):
+        with self.assertRaisesRegex(ValueError, "No emission factor found"):
+            calculate_emissions("electricity_grid", 10, "miles")
 
     def test_invalid_factor_value_is_rejected(self):
         factor = make_factor()

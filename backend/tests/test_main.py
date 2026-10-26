@@ -911,7 +911,15 @@ def test_non_emission_does_not_make_successful_emission_total_incomplete(monkeyp
     ]
 
 
-@pytest.mark.parametrize("category", ["water_effluent", "mobile_fuel_diesel", "stationary_fuel_diesel"])
+@pytest.mark.parametrize(
+    "category",
+    [
+        "water_effluent",
+        "mobile_fuel_diesel",
+        "stationary_fuel_diesel",
+        "purchased_goods",
+    ],
+)
 def test_new_emission_categories_skip_missing_factors_without_failing_invoice(monkeypatch, category):
     calls = []
 
@@ -936,8 +944,43 @@ def test_new_emission_categories_skip_missing_factors_without_failing_invoice(mo
     assert line_item["expected_unit"] == "litres"
     assert line_item["calculation_status"] == "skipped"
     assert line_item["calculation_reason"] == "No emission factor matches this category and unit."
+    assert line_item["emission_calculation"] is None
     assert line_item["review_required"] is True
+    assert any(
+        "No emission factor matches this category and unit."
+        in warning
+        for warning in payload["warnings"]
+    )
     assert calls == [(category, 100, "kWh")]
+
+
+def test_incompatible_activity_unit_skips_calculation_with_warning(monkeypatch):
+    _mock_ai_pipeline(
+        monkeypatch,
+        lambda path, invoice_id: {
+            **_ai_result([_line_item(unit="miles")]),
+            "invoice_id": invoice_id,
+        },
+    )
+
+    response = _post_upload(
+        monkeypatch, "utility.pdf", b"invoice bytes", "application/pdf"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["result"]
+    line_item = payload["line_items"][0]
+    assert payload["emission_calculation_status"] == "partial"
+    assert line_item["calculation_status"] == "skipped"
+    assert line_item["calculation_reason"] == (
+        "No emission factor matches this category and unit."
+    )
+    assert line_item["emission_calculation"] is None
+    assert any(
+        "No emission factor matches this category and unit."
+        in warning
+        for warning in payload["warnings"]
+    )
 
 
 def test_unverified_factor_requires_review(monkeypatch):
