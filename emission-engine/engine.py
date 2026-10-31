@@ -335,6 +335,11 @@ def has_valid_verification_evidence(evidence, factor):
 
     return parsed_date.isoformat() == review_date
 
+CATEGORY_ALIASES = {
+    "mobile_fuel_diesel": "Fleet Diesel"
+}
+
+
 
 def calculate_emissions(category, quantity, unit, expected_unit=None):
     """Calculate emissions and return factor trust information.
@@ -371,11 +376,11 @@ def calculate_emissions(category, quantity, unit, expected_unit=None):
             )
 
     metadata, factors = load_emission_library()
-
+    factor_category = CATEGORY_ALIASES.get(category, category)
     factor_record = next(
         (
             item for item in factors
-            if item["category"] == category
+            if item["category"] == factor_category
             and normalize_unit(item["activity_unit"])
             == normalize_unit(unit)
         ),
@@ -427,6 +432,7 @@ def calculate_emissions(category, quantity, unit, expected_unit=None):
 
     result = {
         "category": category,
+        "factor_category": factor_record["category"],
         "scope": factor_record["scope"],
         "activity_data": quantity,
         "activity_unit": unit,
