@@ -9,6 +9,7 @@ import { useTrueScope } from '../context/TrueScopeContext';
 
 export const InvoicesView = () => {
   const {
+    isSampleCompany,
     invoices,
     stats,
     openUploadModal,
@@ -21,24 +22,26 @@ export const InvoicesView = () => {
       <div className="invoices-header-card">
         <div className="invoices-header-left">
           <div className="invoices-header-tag">
-            <span className="invoices-count-tag">{stats.invoiceCount} uploaded invoice(s)</span>
+            <span className="invoices-count-tag">{stats.invoiceCount} invoice(s)</span>
           </div>
           <h2 className="invoices-title">Invoices & Activity Data</h2>
           <p className="invoices-subtitle">
-            Uploaded invoice records are displayed alongside reference sample data. Unsupported activities require review and may have no emission calculation.
+            Every extracted line item with its activity data, emission factor and confidence. Lines that need a closer look are flagged for review instead of being guessed.
           </p>
         </div>
 
         <div className="invoices-header-right">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={resetDemoData}
-            title="Restore sample invoices"
-          >
-            <RefreshCwIcon size={16} />
-            <span>Restore Sample Data</span>
-          </button>
+          {isSampleCompany && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={resetDemoData}
+              title="Restore the sample company's invoices"
+            >
+              <RefreshCwIcon size={16} />
+              <span>Restore sample invoices</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -54,22 +57,22 @@ export const InvoicesView = () => {
       {/* Mini Stats Bar */}
       <div className="invoices-summary-strip">
         <div className="summary-strip-item">
-          <span className="strip-label">Uploaded CO₂e total</span>
+          <span className="strip-label">Total footprint</span>
           <strong className="strip-val">{formatEmissions(stats.totalEmissionsKg)}</strong>
         </div>
         <div className="summary-strip-divider" />
         <div className="summary-strip-item">
-          <span className="strip-label">Uploaded Scope 1</span>
+          <span className="strip-label">Scope 1</span>
           <span className="strip-val s1">{formatEmissions(stats.scope1Kg)}</span>
         </div>
         <div className="summary-strip-divider" />
         <div className="summary-strip-item">
-          <span className="strip-label">Uploaded Scope 2</span>
+          <span className="strip-label">Scope 2</span>
           <span className="strip-val s2">{formatEmissions(stats.scope2Kg)}</span>
         </div>
         <div className="summary-strip-divider" />
         <div className="summary-strip-item">
-          <span className="strip-label">Uploaded Scope 3</span>
+          <span className="strip-label">Scope 3</span>
           <span className="strip-val s3">{formatEmissions(stats.scope3Kg)}</span>
         </div>
         <div className="summary-strip-divider" />
@@ -78,14 +81,14 @@ export const InvoicesView = () => {
           <span className="strip-val conf">{stats.averageConfidence}%</span>
         </div>
         <p className="invoices-subtitle">
-          Totals include only eligible uploaded kg CO₂e calculations. Sample records, CO₂-only results, skipped, failed, and invalid calculations are excluded.
+          Totals include every line with a compatible quantity and unit. Grid electricity uses a CO₂-basis factor. Lines awaiting review are not included until resolved.
         </p>
       </div>
 
       {/* Invoices Table with Search & Filtering */}
       <Card
-        title="Extracted Invoice Register"
-        subtitle="Click any row to inspect line item calculations, confidence breakdown, or test overrides"
+        title="Invoice register"
+        subtitle="Click any row to inspect the calculation, factor source and confidence"
       >
         <InvoiceTable
           invoices={invoices}

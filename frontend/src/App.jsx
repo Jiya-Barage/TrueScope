@@ -9,10 +9,11 @@ import { ReportsView } from './views/ReportsView';
 import { SettingsView } from './views/SettingsView';
 import { InvoiceUploadModal } from './components/invoices/InvoiceUploadModal';
 import { InvoiceDetailModal } from './components/invoices/InvoiceDetailModal';
+import { CompanyModal } from './components/company/CompanyModal';
 import './App.css';
 
 function MainContent() {
-  const { activeScreen } = useTrueScope();
+  const { activeScreen, company } = useTrueScope();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   return (
@@ -32,7 +33,7 @@ function MainContent() {
           {activeScreen === 'invoices' && <InvoicesView />}
           {activeScreen === 'emissions' && <EmissionsView />}
           {activeScreen === 'reports' && <ReportsView />}
-          {activeScreen === 'settings' && <SettingsView />}
+          {activeScreen === 'settings' && <SettingsView key={company.id} />}
         </main>
 
         <footer className="ts-app-footer">
@@ -40,7 +41,7 @@ function MainContent() {
             <span>TrueScope • AI-Powered Carbon Accounting for SMEs</span>
           </div>
           <div className="footer-right">
-            <span>Calculations reference standard emission factors (unverified)</span>
+            <span>Estimates = activity data × emission factor · factor and confidence shown per line</span>
           </div>
         </footer>
       </div>
@@ -48,6 +49,7 @@ function MainContent() {
       {/* Modals */}
       <InvoiceUploadModal />
       <InvoiceDetailModal />
+      <CompanyModal />
     </div>
   );
 }

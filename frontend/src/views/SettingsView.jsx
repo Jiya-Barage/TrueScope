@@ -8,7 +8,7 @@ import {
 import { useTrueScope } from '../context/TrueScopeContext';
 
 export const SettingsView = () => {
-  const { company, setCompany, resetDemoData, deleteInvoice, invoices } = useTrueScope();
+  const { company, setCompany, resetDemoData, deleteInvoice, invoices, deleteCompany, openCompanyModal } = useTrueScope();
   const [saveToast, setSaveToast] = useState(false);
   const [clearError, setClearError] = useState('');
 
@@ -21,8 +21,12 @@ export const SettingsView = () => {
     reportingYear: company.reportingYear,
     baselineYear: company.baselineYear,
     emissionUnit: company.emissionUnit,
-    factorDatabase: company.factorDatabase,
+    netZeroTarget: company.netZeroTarget || '',
+    employees: company.employees || '',
   });
+  const thisYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 6 }, (_, index) => String(thisYear - index));
+  const withCurrent = (value) => (yearOptions.includes(String(value)) ? yearOptions : [String(value), ...yearOptions]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -30,14 +34,22 @@ export const SettingsView = () => {
 
   const handleSave = (e) => {
     e.preventDefault();
-    setCompany((prev) => ({ ...prev, ...formData }));
+    const employees = Number(formData.employees) || 0;
+    setCompany((prev) => ({
+      ...prev,
+      ...formData,
+      employees,
+      size: employees > 0
+        ? `${employees < 10 ? 'Micro' : employees < 50 ? 'Small' : 'Medium'} enterprise (${employees} employees)`
+        : prev.size,
+    }));
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 3000);
   };
 
   // Allow tester to test empty state
   const handleClearAll = async () => {
-    if (window.confirm('Clear all invoices to test empty state? You can restore them anytime.')) {
+    if (window.confirm(`Remove all invoices for ${company.name}? This cannot be undone${company.isSample ? ', but you can restore the sample invoices.' : '.'}`)) {
       setClearError('');
       try {
         await Promise.all(invoices.map((invoice) => deleteInvoice(invoice.id)));
@@ -52,9 +64,9 @@ export const SettingsView = () => {
   return (
     <div className="view-container settings-view">
       <div className="settings-header-card">
-        <h2 className="settings-title">Organization Settings & Emission Parameters</h2>
+        <h2 className="settings-title">Company Settings</h2>
         <p className="settings-subtitle">
-          Configure SME profile attributes, reporting boundaries, and default emission factor libraries.
+          Company profile, reporting years and the emission factor library used for your estimates.
         </p>
       </div>
 
@@ -69,8 +81,8 @@ export const SettingsView = () => {
       <form onSubmit={handleSave} className="settings-form">
         {/* Organization Information */}
         <Card
-          title="Organization Profile"
-          subtitle="Details used in GHG audit reports and employee carbon intensity benchmarks"
+          title="Company profile"
+          subtitle="Shown on your carbon report and used for intensity benchmarks"
         >
           <div className="settings-grid">
             <div className="form-group">
@@ -94,17 +106,18 @@ export const SettingsView = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Organization Size</label>
+              <label className="form-label">Employees</label>
               <input
-                type="text"
+                type="number"
+                min="1"
                 className="form-input"
-                value={formData.size}
-                onChange={(e) => handleChange('size', e.target.value)}
+                value={formData.employees}
+                onChange={(e) => handleChange('employees', e.target.value)}
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Primary Operating Hub</label>
+              <label className="form-label">Location</label>
               <input
                 type="text"
                 className="form-input"
@@ -117,8 +130,8 @@ export const SettingsView = () => {
 
         {/* GHG Protocol Parameters */}
         <Card
-          title="Carbon Accounting Preferences"
-          subtitle="Define baseline periods and emission factor datasets"
+          title="Reporting preferences"
+          subtitle="Reporting period, baseline, target and units"
         >
           <div className="settings-grid">
             <div className="form-group">
@@ -128,8 +141,9 @@ export const SettingsView = () => {
                 value={formData.reportingYear}
                 onChange={(e) => handleChange('reportingYear', e.target.value)}
               >
-                <option value="2024">2024 (Current Fiscal Year)</option>
-                <option value="2023">2023</option>
+                {withCurrent(formData.reportingYear).map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
               </select>
             </div>
 
@@ -140,22 +154,31 @@ export const SettingsView = () => {
                 value={formData.baselineYear}
                 onChange={(e) => handleChange('baselineYear', e.target.value)}
               >
-                <option value="2023">2023 (Pledge Baseline)</option>
-                <option value="2022">2022</option>
+                {withCurrent(formData.baselineYear).map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
               </select>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Emission Factor Source</label>
-              <select
-                className="form-select"
-                value={formData.factorDatabase}
-                onChange={(e) => handleChange('factorDatabase', e.target.value)}
-              >
-                <option value="Demo Mock Factors (Unverified)">Sample emission factors (unverified)</option>
-                <option value="UK DEFRA / DESNZ 2024 (Backend Roadmap)">UK DEFRA 2024 (Future API Integration)</option>
-                <option value="US EPA GHG Hub 2024 (Backend Roadmap)">US EPA GHG Hub (Future API Integration)</option>
-              </select>
+              <label className="form-label">Emission factor library</label>
+              <input
+                type="text"
+                className="form-input"
+                value="TrueScope India Default Library · GHG Protocol method"
+                readOnly
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Reduction target</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.netZeroTarget}
+                placeholder="e.g. Net zero by 2040"
+                onChange={(e) => handleChange('netZeroTarget', e.target.value)}
+              />
             </div>
 
             <div className="form-group">
@@ -179,45 +202,72 @@ export const SettingsView = () => {
         </Card>
       </form>
 
-      {/* Sample Data Management */}
+      {/* Workspace management */}
       <Card
-        title="Sample Data & State Management"
-        subtitle="Tools to manage records and test empty states"
+        title="Companies & data"
+        subtitle="Manage companies on this device and the invoices stored for the active company"
       >
         <div className="sandbox-actions-grid">
           <div className="sandbox-action-card">
             <div className="sandbox-info">
-              <strong className="sandbox-action-title">Restore Default Sample Invoices</strong>
+              <strong className="sandbox-action-title">Add another company</strong>
               <p className="sandbox-action-desc">
-                Restores the standard suite of 8 realistic SME invoices spanning Scopes 1, 2, and 3.
+                Track a second business, a client or a supplier. Each company has its own invoices and reports.
               </p>
             </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={resetDemoData}
-            >
-              <RefreshCwIcon size={16} />
-              <span>Restore Sample Data</span>
+            <button type="button" className="btn btn-secondary" onClick={() => openCompanyModal('create')}>
+              <span>Add company</span>
             </button>
           </div>
 
+          {company.isSample && (
+            <div className="sandbox-action-card">
+              <div className="sandbox-info">
+                <strong className="sandbox-action-title">Restore sample invoices</strong>
+                <p className="sandbox-action-desc">
+                  Brings back the sample company's eight invoices across Scopes 1, 2 and 3.
+                </p>
+              </div>
+              <button type="button" className="btn btn-secondary" onClick={resetDemoData}>
+                <RefreshCwIcon size={16} />
+                <span>Restore sample invoices</span>
+              </button>
+            </div>
+          )}
+
           <div className="sandbox-action-card">
             <div className="sandbox-info">
-              <strong className="sandbox-action-title">Purge Invoices (Test Empty State)</strong>
+              <strong className="sandbox-action-title">Remove all invoices</strong>
               <p className="sandbox-action-desc">
-                Clears all loaded invoices so you can inspect empty state screens and upload fresh test documents.
+                Deletes every invoice stored for {company.name} so you can start fresh.
               </p>
             </div>
-            <button
-              type="button"
-              className="btn btn-danger-ghost"
-              onClick={handleClearAll}
-            >
+            <button type="button" className="btn btn-danger-ghost" onClick={handleClearAll}>
               <TrashIcon size={16} />
-              <span>Clear All</span>
+              <span>Remove invoices</span>
             </button>
           </div>
+
+          {!company.isSample && (
+            <div className="sandbox-action-card">
+              <div className="sandbox-info">
+                <strong className="sandbox-action-title">Delete this company</strong>
+                <p className="sandbox-action-desc">
+                  Permanently removes {company.name} and all of its invoices from this device.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-danger-ghost"
+                onClick={() => {
+                  if (window.confirm(`Delete ${company.name} and all of its invoices?`)) deleteCompany(company.id);
+                }}
+              >
+                <TrashIcon size={16} />
+                <span>Delete company</span>
+              </button>
+            </div>
+          )}
         </div>
       </Card>
     </div>

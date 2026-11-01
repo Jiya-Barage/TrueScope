@@ -336,7 +336,9 @@ def has_valid_verification_evidence(evidence, factor):
     return parsed_date.isoformat() == review_date
 
 CATEGORY_ALIASES = {
-    "mobile_fuel_diesel": "Fleet Diesel"
+    "mobile_fuel_diesel": "Fleet Diesel",
+    "stationary_fuel_diesel": "Fleet Diesel",
+    "mobile_fuel_petrol": "Fleet Petrol",
 }
 
 

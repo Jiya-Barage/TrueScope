@@ -154,6 +154,9 @@ class TestEmissionEngine(unittest.TestCase):
             "Fleet Diesel": (
                 2.687, "Litres", "kg CO2e/Litre", None, None,
             ),
+            "Fleet Petrol": (
+                2.31, "Litres", "kg CO2e/Litre", None, None,
+            ),
             "natural_gas": (
                 0.183, "kWh", "kg CO2e/kWh", None, None,
             ),
@@ -593,7 +596,6 @@ class TestEmissionEngine(unittest.TestCase):
     def test_requested_categories_have_no_matching_library_factors(self):
         unsupported_cases = [
             ("water_effluent", 10, "m³"),
-            ("stationary_fuel_diesel", 10, "litres"),
             ("purchased_goods", 10, "kg"),
         ]
 
@@ -603,6 +605,15 @@ class TestEmissionEngine(unittest.TestCase):
                     ValueError, "No emission factor found"
                 ):
                     calculate_emissions(category, quantity, unit)
+
+    def test_stationary_diesel_and_petrol_use_indicative_fuel_factors(self):
+        diesel = calculate_emissions("stationary_fuel_diesel", 10, "litres")
+        self.assertEqual(diesel["category"], "stationary_fuel_diesel")
+        self.assertAlmostEqual(diesel["emissions"], 26.87)
+        petrol = calculate_emissions("mobile_fuel_petrol", 10, "litres")
+        self.assertEqual(petrol["category"], "mobile_fuel_petrol")
+        self.assertAlmostEqual(petrol["emissions"], 23.1)
+        self.assertNotEqual(petrol.get("emission_factor_status", "unverified"), "verified")
 
     def test_mobile_fuel_diesel_uses_demo_fleet_diesel_factor(self):
         result = calculate_emissions(

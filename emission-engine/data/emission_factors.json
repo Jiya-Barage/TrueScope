@@ -10,7 +10,7 @@
         "electricity_reference": "https://cea.nic.in/cdm-co2-baseline-database/?lang=en",
         "electricity_alternative_reference": "https://www.niti.gov.in/sites/default/files/2026-02/Scenarios-Towards-Viksit-Bharat-and-Net-Zero-Sectoral-Insights-Power.pdf",
         "electricity_reference_year": "2024-25",
-        "electricity_reference_value": 0.710,
+        "electricity_reference_value": 0.71,
         "electricity_reference_unit": "kg CO2/kWh",
         "electricity_reference_status": "unverified_legacy_metadata",
         "electricity_reference_note": "Legacy library claim only. The CEA reference, NITI Aayog alternative, cited factor value, and 2024-25 period have not been reconciled against accessible source content.",
@@ -22,7 +22,7 @@
             "category": "electricity_grid",
             "scope": "Scope 2",
             "activity_unit": "kWh",
-            "factor": 0.710,
+            "factor": 0.71,
             "factor_unit": "kg CO2/kWh",
             "source": "https://www.niti.gov.in/sites/default/files/2026-02/Scenarios-Towards-Viksit-Bharat-and-Net-Zero-Sectoral-Insights-Power.pdf",
             "source_year": null,
@@ -58,6 +58,27 @@
                 "activity_boundary": null,
                 "method": null,
                 "rationale": "No factor-specific source, fuel specification, geography, reference year, or combustion/upstream boundary is recorded."
+            }
+        },
+        {
+            "category": "Fleet Petrol",
+            "scope": "Scope 1",
+            "activity_unit": "Litres",
+            "factor": 2.31,
+            "factor_unit": "kg CO2e/Litre",
+            "source": null,
+            "source_year": null,
+            "verification_status": "unverified_demo_value",
+            "provenance": {
+                "source_title": null,
+                "source_publisher": null,
+                "dataset_version": null,
+                "publication_year": null,
+                "reporting_year": null,
+                "geography": null,
+                "activity_boundary": null,
+                "method": null,
+                "rationale": "Indicative petrol (gasoline) combustion factor. No factor-specific source, fuel specification, geography, reference year, or combustion/upstream boundary is recorded."
             }
         },
         {
@@ -148,7 +169,7 @@
             "category": "Packaging Materials",
             "scope": "Scope 3",
             "activity_unit": "kg",
-            "factor": 0.940,
+            "factor": 0.94,
             "factor_unit": "kg CO2e/kg",
             "source": null,
             "source_year": null,

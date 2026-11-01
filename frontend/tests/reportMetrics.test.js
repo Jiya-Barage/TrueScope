@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateInvoiceStats } from '../src/utils/reportMetrics.js';
+import { calculateInvoiceStats, buildMonthlyTrend } from '../src/utils/reportMetrics.js';
 
-test('uploaded CO2e totals exclude demo, CO2-only, skipped, failed, and invalid rows', () => {
+test('uploaded totals include CO2e and CO2-basis lines but exclude demo, skipped, failed, and invalid rows', () => {
   const invoices = [
     {
       isBackendUpload: false,
@@ -81,23 +81,40 @@ test('uploaded CO2e totals exclude demo, CO2-only, skipped, failed, and invalid 
 
   const stats = calculateInvoiceStats(invoices);
 
-  assert.equal(stats.totalEmissionsKg, 100);
+  assert.equal(stats.totalEmissionsKg, 115);
   assert.equal(stats.scope1Kg, 29);
-  assert.equal(stats.scope2Kg, 71);
+  assert.equal(stats.scope2Kg, 86);
   assert.equal(stats.scope3Kg, 0);
   assert.equal(stats.demoTotalEmissionsKg, 30);
   assert.equal(stats.demoRowCount, 1);
   assert.equal(stats.invoiceCount, 6);
   assert.equal(stats.averageConfidence, 80);
   assert.equal(stats.skippedLineCount, 1);
-  assert.equal(stats.ineligibleLineCount, 4);
+  assert.equal(stats.ineligibleLineCount, 3);
   assert.equal(stats.co2OnlyLineCount, 1);
   assert.equal(stats.unverifiedCalculationCount, 2);
   assert.deepEqual(
     stats.categoryBreakdown.map(({ category, emissions }) => ({ category, emissions })),
     [
-      { category: 'electricity_grid', emissions: 71 },
-      { category: 'natural_gas', emissions: 29 },
+      { category: 'Purchased Electricity', emissions: 71 },
+      { category: 'Natural Gas Heating', emissions: 29 },
+      { category: 'Other', emissions: 15 },
     ],
   );
+
+  const withSample = calculateInvoiceStats(invoices, {}, { includeSample: true });
+  assert.equal(withSample.totalEmissionsKg, 145);
+  assert.equal(withSample.scope1Kg, 59);
+  assert.equal(withSample.invoiceCount, 7);
+});
+
+test('buildMonthlyTrend groups calculated lines by invoice month and scope', () => {
+  const trend = buildMonthlyTrend([
+    { isBackendUpload: true, date: '2026-09-10', scope: 'Scope 1', calculationStatus: 'calculated', emissionsBasis: 'CO2e', emissionsUnit: 'kg CO2e', emissionsValue: 100 },
+    { isBackendUpload: true, date: '2026-09-22', scope: 'Scope 2', calculationStatus: 'calculated', emissionsBasis: 'CO2', emissionsUnit: 'kg CO2', emissionsValue: 50 },
+    { isBackendUpload: true, date: '2026-10-02', scope: 'Scope 3', calculationStatus: 'calculated', emissionsBasis: 'CO2e', emissionsUnit: 'kg CO2e', emissionsValue: 25 },
+    { isBackendUpload: true, date: '2026-10-03', scope: 'Scope 3', calculationStatus: 'skipped' },
+  ]);
+  assert.deepEqual(trend.map((m) => [m.month, m.total]), [['Sep 26', 150], ['Oct 26', 25]]);
+  assert.equal(trend[0].scope2, 50);
 });

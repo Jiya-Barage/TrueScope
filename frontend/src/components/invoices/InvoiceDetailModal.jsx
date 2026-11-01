@@ -12,6 +12,7 @@ import {
   formatEmissions,
   formatCurrency,
   formatDate,
+  prettyCategory,
 } from '../../utils/formatters';
 import { useTrueScope } from '../../context/TrueScopeContext';
 
@@ -199,7 +200,7 @@ export const InvoiceDetailModal = () => {
             <div className="detail-field-card">
               <span className="field-label">Activity Category</span>
               <strong className="field-val highlight-cat">
-                {selectedInvoice.activityCategory}
+                {prettyCategory(selectedInvoice.activityCategory)}
               </strong>
             </div>
 
@@ -246,8 +247,8 @@ export const InvoiceDetailModal = () => {
                   {selectedInvoice.emissionCalculation && (
                     <span className="factor-note-pill">
                       {selectedInvoice.emissionFactorVerified
-                        ? 'Verified'
-                        : 'Unverified — review required'}
+                        ? 'Verified factor'
+                        : 'Indicative factor'}
                     </span>
                   )}
                   {selectedInvoice.emissionFactorGeography && (
@@ -309,7 +310,7 @@ export const InvoiceDetailModal = () => {
                     {selectedInvoice.emissionFactor} {selectedInvoice.emissionFactorUnit}
                   </strong>
                   <span className="factor-note-pill">
-                    {selectedInvoice.emissionFactorNote || 'Unverified emission factor'}
+                    {selectedInvoice.emissionFactorNote || 'Indicative emission factor'}
                   </span>
                 </div>
               )}
@@ -416,7 +417,7 @@ export const InvoiceDetailModal = () => {
               </>
             ) : (
               <>
-                <strong>Sample Calculation:</strong> Calculations for preloaded records are based on reference emission factors. In production, factors map to verified DEFRA, EPA GHG Hub, or regional grid APIs with full audit logs.
+                <strong>Sample invoice:</strong> This record belongs to the sample company and uses reference emission factors. Upload your own invoice to see the full extraction and factor trail.
               </>
             )}
           </span>

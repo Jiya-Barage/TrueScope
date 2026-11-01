@@ -99,11 +99,20 @@ export const InvoiceUploadModal = () => {
     setErrorMessage('');
   };
 
-  const handleSelectPreset = (preset) => {
-    setSelectedPreset(preset);
-    setSelectedFile(null);
-    setErrorMessage('Presets are reference data, not files. Select an invoice file to upload.');
-  };
+    const handleSelectPreset = async (preset) => {
+     setErrorMessage('');
+     setUploadResponse(null);
+     try {
+       const res = await fetch(preset.fileUrl);
+       if (!res.ok) throw new Error('load failed');
+       const blob = await res.blob();
+       const file = new File([blob], preset.fileName, { type: blob.type || 'image/png' });
+       handleFileSelected(file);
+       setSelectedPreset(preset);
+     } catch {
+       setErrorMessage('Could not load the example invoice file.');
+     }
+   };
 
   const handleUpload = async () => {
     if (uploadInFlight.current) return;
@@ -125,9 +134,16 @@ export const InvoiceUploadModal = () => {
         method: 'POST',
         body: formData,
       });
-      addUploadedInvoice(response);
-      setUploadResponse(response);
+      const outcome = addUploadedInvoice(response);
+      if (outcome?.duplicate) {
+        setErrorMessage(
+          `Invoice ${outcome.invoiceNumber} was already uploaded for this company, so it was not counted twice.`,
+        );
+      } else {
+        setUploadResponse(response);
+      }
       setSelectedFile(null);
+      setSelectedPreset(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Invoice upload failed.');
     } finally {
@@ -141,7 +157,7 @@ export const InvoiceUploadModal = () => {
       isOpen={isUploadModalOpen}
       onClose={handleClose}
       title="Upload Invoice for Carbon Estimation"
-      subtitle="Upload a supported invoice for synchronous backend processing."
+      subtitle="Upload a PDF, PNG or JPG invoice and get Scope 1–3 estimates in seconds."
       maxWidth="680px"
       footer={
         <div className="upload-modal-footer">
@@ -174,9 +190,9 @@ export const InvoiceUploadModal = () => {
         <div className="demo-notice-banner">
           <InfoIcon size={18} className="demo-notice-icon" />
           <div className="demo-notice-content">
-            <strong>Backend Processing</strong>
+            <strong>How it works</strong>
             <p>
-              The selected file is sent to the TrueScope backend for synchronous processing. Sample presets below are reference data and are not uploaded by this workflow.
+              Your invoice is read with OCR, line items are classified into GHG scopes, and emissions are estimated with the factor library. Every line shows its factor, source and confidence.
             </p>
           </div>
         </div>
@@ -296,8 +312,8 @@ export const InvoiceUploadModal = () => {
             {/* Preset Invoices for Reference */}
             <div className="preset-invoices-section">
               <div className="preset-header">
-                <span className="preset-title">Reference sample invoices:</span>
-                <span className="preset-subtitle">Sample data for review</span>
+                <span className="preset-title">Example invoices:</span>
+                <span className="preset-subtitle">Pre-filled examples</span>
               </div>
 
               <div className="preset-grid">

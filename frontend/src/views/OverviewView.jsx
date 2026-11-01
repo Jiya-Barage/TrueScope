@@ -20,9 +20,11 @@ export const OverviewView = () => {
     invoices,
     backendLoadError,
     company,
+    isSampleCompany,
     openUploadModal,
     setActiveScreen,
   } = useTrueScope();
+  const hasData = invoices.length > 0;
 
   return (
     <div className="view-container overview-view">
@@ -31,18 +33,21 @@ export const OverviewView = () => {
           Saved backend invoices could not be restored. {backendLoadError}
         </div>
       )}
-      {/* Top Welcome / Demo Banner */}
+      {/* Top Welcome Banner */}
       <div className="overview-welcome-banner">
         <div className="welcome-banner-text">
           <div className="banner-tag-row">
             <span className="banner-facility-tag">
-              {company.name} • {company.size}
+              {company.name} • {company.isSample ? 'Sample company' : company.size}
             </span>
           </div>
-          <h2 className="welcome-heading">SME Greenhouse Gas Overview</h2>
+          <h2 className="welcome-heading">
+            {hasData ? `${company.name}: carbon footprint` : `Welcome, ${company.name}`}
+          </h2>
           <p className="welcome-desc">
-            Uploaded invoice calculation results are shown separately from sample data.
-            Review factor provenance and verification status before interpreting any estimate.
+            {hasData
+              ? 'Your emissions across Scopes 1, 2 and 3, built directly from your invoices. Open any line to see the factor, source and confidence behind it.'
+              : 'Upload your first invoice and TrueScope will extract the activity data and estimate your Scope 1, 2 and 3 emissions in seconds.'}
           </p>
         </div>
 
@@ -61,10 +66,10 @@ export const OverviewView = () => {
       {/* KPI Cards Row */}
       <div className="kpi-grid">
         <MetricCard
-          title="Uploaded CO₂e Results"
+          title="Total Footprint"
           value={formatEmissions(stats.totalEmissionsKg)}
-          subvalue={`${(stats.totalEmissionsKg / 1000).toFixed(2)} metric tons CO₂e; excludes sample and ineligible rows`}
-          trendLabel="Unverified estimates; review factor evidence"
+          subvalue={`${(stats.totalEmissionsKg / 1000).toFixed(2)} metric tons CO₂e`}
+          trendLabel="Estimated from your invoices"
           icon={TrendingDownIcon}
         />
 
@@ -96,39 +101,56 @@ export const OverviewView = () => {
         />
 
         <MetricCard
-          title="Uploaded Invoices"
+          title="Invoices Processed"
           value={`${stats.invoiceCount}`}
-          subvalue={`Average extraction confidence: ${stats.averageConfidence}%`}
+          subvalue={isSampleCompany ? 'Sample invoices across all scopes' : `Average extraction confidence: ${stats.averageConfidence}%`}
           icon={FileTextIcon}
-          trendLabel={`${stats.skippedLineCount} uploaded line(s) skipped`}
+          trendLabel={stats.skippedLineCount > 0 ? `${stats.skippedLineCount} line(s) flagged for review` : 'All lines estimated'}
         />
       </div>
 
-      {/* Charts Row: Monthly Trend (left) + Category Breakdown (right) */}
-      <div className="charts-split-grid">
-        <Card
-          title="Monthly Emissions Trend (kg CO₂e)"
-          subtitle="Sample emissions trend; uploaded invoices are excluded"
-          className="chart-card-trend"
-        >
-          <MonthlyTrendChart data={monthlyTrends} />
-        </Card>
+      {!hasData && (
+        <div className="empty-hero">
+          <h3>No invoices yet for {company.name}</h3>
+          <p>
+            Upload an electricity bill, a fuel receipt or a freight invoice. You will see your footprint by
+            scope, by category and by month here, and a report you can share with buyers.
+          </p>
+          <div className="empty-hero-actions">
+            <button type="button" className="btn btn-primary" onClick={openUploadModal}>
+              <UploadCloudIcon size={18} />
+              <span>Upload your first invoice</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-        <Card
-          title="Emissions by Category"
-          subtitle="Eligible uploaded CO₂e calculations only; sample records excluded"
-          className="chart-card-category"
-        >
-          <CategoryDonutChart
-            categories={stats.categoryBreakdown}
-          />
-        </Card>
-      </div>
+      {/* Charts Row: Monthly Trend (left) + Category Breakdown (right) */}
+      {hasData && (
+        <div className="charts-split-grid">
+          <Card
+            title="Monthly Emissions Trend (kg CO₂e)"
+            subtitle={isSampleCompany ? 'Sample company history' : 'Built from your invoice dates'}
+            className="chart-card-trend"
+          >
+            <MonthlyTrendChart data={monthlyTrends} isSample={isSampleCompany} />
+          </Card>
+
+          <Card
+            title="Emissions by Category"
+            subtitle="Where your footprint comes from"
+            className="chart-card-category"
+          >
+            <CategoryDonutChart categories={stats.categoryBreakdown} />
+          </Card>
+        </div>
+      )}
 
       {/* Recent Invoices Activity Section */}
+      {hasData && (
       <Card
         title="Recent Invoice Activity"
-        subtitle="Uploaded invoices and reference sample records"
+        subtitle="Latest invoices and the emissions estimated from them"
         headerAction={
           <button
             type="button"
@@ -147,17 +169,20 @@ export const OverviewView = () => {
           emptyMessage="No invoices uploaded yet."
         />
       </Card>
+      )}
 
-      {/* Bottom Methodology & Limitations Note */}
+      {/* Bottom Methodology Note */}
       <div className="overview-methodology-note">
         <div className="methodology-icon">
           <InfoIcon size={18} />
         </div>
         <div className="methodology-text">
-          <strong>Calculation Basis & Limitations:</strong>
+          <strong>How we calculate:</strong>
           <span>
-            Activity quantity × emission factor produces emissions in that factor's reported basis and unit; CO₂ is not treated as CO₂e.
-            Sample values are excluded from uploaded totals. Uploaded CO₂-only, skipped, failed, or otherwise ineligible rows are excluded from CO₂e totals; uploaded factor values remain unverified unless evidence is established.
+            Emissions = activity quantity × emission factor, following the GHG Protocol Corporate Standard.
+            Grid electricity uses a CO₂-basis factor (CH₄ and N₂O not included). Lines without a
+            compatible quantity and unit are flagged for review rather than guessed.
+            {stats.skippedLineCount > 0 ? ` ${stats.skippedLineCount} line(s) currently await review.` : ''}
           </span>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { ScopeBadge, ConfidenceBadge } from '../common/Badge';
 import { ChevronRightIcon, FileTextIcon } from '../common/Icons';
-import { formatEmissionValue, formatEmissions, formatDate } from '../../utils/formatters';
+import { formatEmissionValue, formatEmissions, formatDate, prettyCategory } from '../../utils/formatters';
 import { useTrueScope } from '../../context/TrueScopeContext';
 
 export const InvoiceTable = ({
@@ -99,7 +99,7 @@ export const InvoiceTable = ({
                       <span className="td-inv-num">{inv.invoiceNumber || inv.backendInvoiceId || inv.id}</span>
                       <span className="td-supplier">{inv.supplier}</span>
                       <span className="td-date">
-                        {inv.isBackendUpload ? 'Uploaded invoice' : 'Sample record'}
+                        {inv.isBackendUpload ? 'Uploaded invoice' : 'Sample invoice'}
                       </span>
                       <span className="td-date">{formatDate(inv.date)}</span>
                     </div>
@@ -110,7 +110,7 @@ export const InvoiceTable = ({
                     </div>
                   </td>
                   <td>
-                    <span className="td-category-tag">{inv.activityCategory}</span>
+                    <span className="td-category-tag">{prettyCategory(inv.activityCategory)}</span>
                   </td>
                   <td>
                     <ScopeBadge scope={inv.scope} />
