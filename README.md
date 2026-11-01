@@ -36,13 +36,16 @@ TrueScope reads an invoice, understands what was bought, and estimates the emiss
 
 📺 **YouTube link:** *(coming soon)*
 
-<!--
 ## 📸 Screenshots
-Add images to docs/screenshots/ and uncomment:
+
+### Dashboard
 ![Dashboard](docs/screenshots/dashboard.png)
+
+### Invoice extraction and emission results
 ![Invoice results](docs/screenshots/invoice-results.png)
+
+### Reports
 ![Reports](docs/screenshots/reports.png)
--->
 
 ---
 
