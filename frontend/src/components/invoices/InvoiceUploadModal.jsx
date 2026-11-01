@@ -14,7 +14,7 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 
 export const InvoiceUploadModal = () => {
-  const { isUploadModalOpen, closeUploadModal, addUploadedInvoice } = useTrueScope();
+     const { isUploadModalOpen, closeUploadModal, addUploadedInvoice, openInvoiceDetail } = useTrueScope();
 
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -140,7 +140,9 @@ export const InvoiceUploadModal = () => {
           `Invoice ${outcome.invoiceNumber} was already uploaded for this company, so it was not counted twice.`,
         );
       } else {
-        setUploadResponse(response);
+        resetState();
+     closeUploadModal();
+     if (outcome?.invoice) openInvoiceDetail(outcome.invoice);
       }
       setSelectedFile(null);
       setSelectedPreset(null);

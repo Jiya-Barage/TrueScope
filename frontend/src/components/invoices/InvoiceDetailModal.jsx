@@ -239,59 +239,48 @@ export const InvoiceDetailModal = () => {
                       ? 'Not available'
                       : `${selectedInvoice.emissionFactor} ${selectedInvoice.emissionFactorUnit || ''}`}
                   </strong>
-                  {selectedInvoice.emissionFactorNote && (
-                    <span className="factor-note-pill">
-                      {selectedInvoice.emissionFactorNote}
-                    </span>
-                  )}
-                  {selectedInvoice.emissionCalculation && (
+                                    {selectedInvoice.emissionCalculation && (
                     <span className="factor-note-pill">
                       {selectedInvoice.emissionFactorVerified
                         ? 'Verified factor'
-                        : 'Indicative factor'}
+                        : 'Indicative factor, pending verification'}
                     </span>
                   )}
-                  {selectedInvoice.emissionFactorGeography && (
+                  <details style={{ marginTop: '8px' }}>
+                    <summary style={{ cursor: 'pointer', fontSize: '0.85rem' }}>
+                      Show source details
+                    </summary>
                     <span className="factor-note-pill">
-                      Geography: {selectedInvoice.emissionFactorGeography}
+                      Geography:{' '}
+                      {selectedInvoice.emissionFactorGeography ||
+                        (selectedInvoice.emissionFactorLibraryDefaultGeography
+                          ? `not confirmed (library default: ${selectedInvoice.emissionFactorLibraryDefaultGeography})`
+                          : 'not confirmed')}
                     </span>
-                  )}
-                  {!selectedInvoice.emissionFactorGeography && (
-                    <span className="factor-note-pill">
-                      Geography not established
-                      {selectedInvoice.emissionFactorLibraryDefaultGeography
-                        ? ` (library default: ${selectedInvoice.emissionFactorLibraryDefaultGeography})`
-                        : ''}
-                    </span>
-                  )}
-                  {selectedInvoice.emissionFactorSource && (
-                    <span className="factor-note-pill">
-                      Source: {selectedInvoice.emissionFactorSource}
-                      {selectedInvoice.emissionFactorSourceYear
-                        ? ` (${selectedInvoice.emissionFactorSourceYear})`
-                        : ''}
-                    </span>
-                  )}
-                  {selectedInvoice.emissionFactorProvenance && (
+                    {selectedInvoice.emissionFactorSource && (
+                      <span className="factor-note-pill">
+                        Source: {selectedInvoice.emissionFactorSource}
+                        {selectedInvoice.emissionFactorSourceYear
+                          ? ` (${selectedInvoice.emissionFactorSourceYear})`
+                          : ''}
+                      </span>
+                    )}
                     <span className="factor-note-pill">
                       Activity boundary:{' '}
-                      {selectedInvoice.emissionFactorProvenance.activity_boundary ||
+                      {selectedInvoice.emissionFactorProvenance?.activity_boundary ||
                         'Not documented'}
                     </span>
-                  )}
-                  {selectedInvoice.emissionFactorProvenance && (
                     <span className="factor-note-pill">
                       Method:{' '}
-                      {selectedInvoice.emissionFactorProvenance.method ||
+                      {selectedInvoice.emissionFactorProvenance?.method ||
                         'Not documented'}
                     </span>
-                  )}
-                  {selectedInvoice.emissionFactorProvenance?.rationale && (
-                    <span className="factor-note-pill">
-                      Provenance limitation:{' '}
-                      {selectedInvoice.emissionFactorProvenance.rationale}
-                    </span>
-                  )}
+                    {selectedInvoice.emissionFactorProvenance?.rationale && (
+                      <span className="factor-note-pill">
+                        Note: {selectedInvoice.emissionFactorProvenance.rationale}
+                      </span>
+                    )}
+                  </details>
                 </div>
               ) : isEditing ? (
                 <div className="inline-edit-group">

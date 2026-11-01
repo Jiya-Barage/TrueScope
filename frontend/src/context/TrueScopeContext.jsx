@@ -253,7 +253,7 @@ export function TrueScopeProvider({ children }) {
       'Invoice processed',
       `${adaptedInvoices[0].invoiceNumber || 'Invoice'} from ${adaptedInvoices[0].supplier || 'supplier'}: ${adaptedInvoices.length} line item(s) extracted.`,
     );
-    return { added: true, duplicate: false };
+       return { added: true, duplicate: false, invoice: adaptedInvoices[0] };
   };
 
   // Delete invoice
