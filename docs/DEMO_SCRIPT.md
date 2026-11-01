@@ -1,6 +1,6 @@
 # TrueScope – 3-minute demo script
 
-**Before you start (2 min):** run backend + frontend (see HANDOFF.md). Open http://localhost:5173. Keep `sample-invoices/` folder open in a file window. Do one dry run, then record a backup video.
+**Before you start (2 min):** run backend + frontend (see README.md). Open http://localhost:5173. Keep `sample-invoices/` folder open in a file window. Do one dry run, then record a backup video.
 
 **0:00 Hook (20s)** – "Every Indian SME selling to a big buyer now gets asked for a carbon number. They have invoices, not ESG teams. TrueScope turns an invoice into a Scope 1–3 report in seconds."
 
