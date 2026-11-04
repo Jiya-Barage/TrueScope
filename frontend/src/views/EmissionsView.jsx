@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card } from '../components/common/Card';
-import { ScopeBadge, DemoPill } from '../components/common/Badge';
+import { ScopeBadge } from '../components/common/Badge';
 import {
   InfoIcon,
 } from '../components/common/Icons';
@@ -55,14 +55,13 @@ export const EmissionsView = () => {
       <div className="emissions-header-banner">
         <div>
           <div className="emissions-tag-row">
-            <DemoPill label="DEMO CALCULATIONS • FACTORS UNVERIFIED" />
             <span className="emissions-facility-tag">
               Baseline Year: {company.baselineYear} • Reporting Year: {company.reportingYear}
             </span>
           </div>
           <h2 className="emissions-title">Greenhouse Gas (GHG) Scope Breakdown</h2>
           <p className="emissions-desc">
-            Eligible uploaded CO₂e calculations only; synthetic demo rows, CO₂-only results, and ineligible calculations are excluded. Scope classification and factor evidence have not been independently validated.
+            Your footprint split by GHG Protocol scope, built from every invoice line with a compatible quantity and unit. Each estimate keeps its factor, source and confidence.
           </p>
         </div>
       </div>
@@ -188,13 +187,13 @@ export const EmissionsView = () => {
           <div className="methodology-block">
             <span className="block-label">2. Emission Factor Application</span>
             <p className="block-text">
-              The engine reports emissions in the matched factor's basis and unit. Only compatible kg CO₂e values are included in dashboard totals.
+              Each line is matched to a factor by activity category and unit, then multiplied by the activity quantity. Grid electricity uses a CO₂-basis factor.
             </p>
           </div>
           <div className="methodology-block">
-            <span className="block-label">3. Compliance Notice</span>
+            <span className="block-label">3. Data Quality</span>
             <p className="block-text">
-              Preloaded demo records use mock factors. Uploaded results retain backend factor verification status and source where available; unverified factors are flagged for review.
+              Factors come from the TrueScope India default library and are indicative. Confirm them for your reporting year and geography before external disclosure; lines that cannot be matched are flagged for review.
             </p>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatNumber } from '../../utils/formatters';
 
-export const MonthlyTrendChart = ({ data = [] }) => {
+export const MonthlyTrendChart = ({ data = [], isSample = false }) => {
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
   if (!data || data.length === 0) {
@@ -16,7 +16,7 @@ export const MonthlyTrendChart = ({ data = [] }) => {
   const chartHeight = height - padding.top - padding.bottom;
 
   // Max value calculation
-  const maxTotal = Math.max(...data.map((d) => d.total || (d.scope1 + d.scope2 + d.scope3)), 10000);
+  const maxTotal = Math.max(...data.map((d) => d.total || (d.scope1 + d.scope2 + d.scope3)), 10);
   const yTicks = [0, maxTotal * 0.25, maxTotal * 0.5, maxTotal * 0.75, maxTotal];
 
   const barSlotWidth = chartWidth / data.length;
@@ -199,7 +199,7 @@ export const MonthlyTrendChart = ({ data = [] }) => {
 
       <div className="chart-caption">
         <span>Unit: kg CO₂e</span>
-        <span className="chart-disclaimer-tag">Demo Simulated Historical Baseline</span>
+        <span className="chart-disclaimer-tag">{isSample ? 'Sample company history' : 'From your invoices'}</span>
       </div>
     </div>
   );

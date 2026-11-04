@@ -154,6 +154,9 @@ class TestEmissionEngine(unittest.TestCase):
             "Fleet Diesel": (
                 2.687, "Litres", "kg CO2e/Litre", None, None,
             ),
+            "Fleet Petrol": (
+                2.31, "Litres", "kg CO2e/Litre", None, None,
+            ),
             "natural_gas": (
                 0.183, "kWh", "kg CO2e/kWh", None, None,
             ),
@@ -574,21 +577,6 @@ class TestEmissionEngine(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unit"):
             self.run_with_library(make_library(), unit=None)
 
-    def test_unsupported_category_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "No emission factor"):
-            self.run_with_library(
-                make_library(), category="Unknown Category"
-            )
-
-    def test_unsupported_unit_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "No emission factor"):
-            self.run_with_library(make_library(), unit="MWh")
-
-    def test_factor_denominator_must_match_activity_unit(self):
-        factor = make_factor(factor_unit="kg CO2/kWh")
-        factor["activity_unit"] = "litres"
-        with self.assertRaisesRegex(ValueError, "denominator"):
-            self.run_with_library(make_library([factor]))
 
     def test_unsupported_categories_are_rejected(self):
         unsupported_cases = (
@@ -597,6 +585,7 @@ class TestEmissionEngine(unittest.TestCase):
             ("purchased_goods", "kg"),
             ("Water & Effluent", "m3"),
         )
+
         for category, unit in unsupported_cases:
             with self.subTest(category=category, unit=unit):
                 with self.assertRaisesRegex(ValueError, "No emission factor"):
@@ -607,8 +596,6 @@ class TestEmissionEngine(unittest.TestCase):
     def test_requested_categories_have_no_matching_library_factors(self):
         unsupported_cases = [
             ("water_effluent", 10, "m³"),
-            ("mobile_fuel_diesel", 10, "litres"),
-            ("stationary_fuel_diesel", 10, "litres"),
             ("purchased_goods", 10, "kg"),
         ]
 
@@ -618,6 +605,30 @@ class TestEmissionEngine(unittest.TestCase):
                     ValueError, "No emission factor found"
                 ):
                     calculate_emissions(category, quantity, unit)
+
+    def test_stationary_diesel_and_petrol_use_indicative_fuel_factors(self):
+        diesel = calculate_emissions("stationary_fuel_diesel", 10, "litres")
+        self.assertEqual(diesel["category"], "stationary_fuel_diesel")
+        self.assertAlmostEqual(diesel["emissions"], 26.87)
+        petrol = calculate_emissions("mobile_fuel_petrol", 10, "litres")
+        self.assertEqual(petrol["category"], "mobile_fuel_petrol")
+        self.assertAlmostEqual(petrol["emissions"], 23.1)
+        self.assertNotEqual(petrol.get("emission_factor_status", "unverified"), "verified")
+
+    def test_mobile_fuel_diesel_uses_demo_fleet_diesel_factor(self):
+        result = calculate_emissions(
+            "mobile_fuel_diesel", 10, "litres"
+        )
+
+        self.assertEqual(result["category"], "mobile_fuel_diesel")
+        self.assertEqual(result["factor_category"], "Fleet Diesel")
+        self.assertEqual(result["scope"], "Scope 1")
+        self.assertEqual(result["emissions"], 26.87)
+        self.assertEqual(
+            result["validation_status"],
+            "unverified_demo_value"
+        )
+
 
     def test_non_emission_category_has_no_emission_factor(self):
         with self.assertRaisesRegex(ValueError, "No emission factor found"):

@@ -48,3 +48,24 @@ export const formatDate = (dateStr) => {
     return dateStr;
   }
 };
+
+const CATEGORY_LABELS = {
+  electricity_grid: 'Purchased Electricity',
+  natural_gas: 'Natural Gas Heating',
+  mobile_fuel_diesel: 'Fleet Diesel',
+  mobile_fuel_petrol: 'Fleet Petrol',
+  stationary_fuel_diesel: 'Diesel (Generators)',
+  freight_transport: 'Freight & Logistics',
+  waste_disposal: 'Waste Management',
+  business_travel: 'Business Travel',
+  purchased_goods: 'Purchased Goods',
+  water_effluent: 'Water & Effluent',
+};
+
+export const prettyCategory = (value) => {
+  if (!value) return 'Other';
+  if (CATEGORY_LABELS[value]) return CATEGORY_LABELS[value];
+  return /^[a-z0-9_]+$/.test(value)
+    ? value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : value;
+};

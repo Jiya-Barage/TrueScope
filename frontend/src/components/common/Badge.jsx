@@ -56,12 +56,6 @@ export const ConfidenceBadge = ({ confidence, confidenceFlag }) => {
   );
 };
 
-export const DemoPill = ({ label = 'DEMO DATA' }) => (
-  <span className="demo-pill" title="Demonstration data for hackathon prototype">
-    ⚡ {label}
-  </span>
-);
-
 export const StatusBadge = ({ status = 'Processed' }) => {
   return <span className="badge badge-status">{status}</span>;
 };

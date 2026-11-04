@@ -13,6 +13,9 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
   const {
     activeScreen,
     company,
+    companies,
+    switchCompany,
+    openCompanyModal,
     openUploadModal,
     notifications,
     unreadNotifCount,
@@ -20,7 +23,19 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
   } = useTrueScope();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isCompanyMenuOpen, setIsCompanyMenuOpen] = useState(false);
   const notifRef = useRef(null);
+  const companyRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (companyRef.current && !companyRef.current.contains(event.target)) {
+        setIsCompanyMenuOpen(false);
+      }
+    };
+    if (isCompanyMenuOpen) document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isCompanyMenuOpen]);
 
   // Close notifications when clicking outside
   useEffect(() => {
@@ -52,11 +67,11 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
     },
     reports: {
       title: 'Carbon Reporting & Export',
-      subtitle: 'Draft demo summaries and local CSV data export for technical review.',
+      subtitle: 'Summary reports and local CSV data export for SME stakeholders.',
     },
     settings: {
       title: 'Platform & Organization Settings',
-      subtitle: 'Manage demo SME profile, reporting parameters, and factor databases.',
+      subtitle: 'Manage SME profile, reporting parameters, and factor databases.',
     },
   };
 
@@ -84,7 +99,6 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
         <div className="topbar-heading">
           <div className="topbar-title-row">
             <h1 className="topbar-title">{currentMeta.title}</h1>
-            <span className="demo-badge">DEMO DATA</span>
           </div>
           <p className="topbar-subtitle">{currentMeta.subtitle}</p>
         </div>
@@ -120,7 +134,7 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
               <div className="notif-dropdown-header">
                 <div>
                   <h4 className="notif-title">Activity Alerts</h4>
-                  <span className="notif-subtitle">Simulated engine events</span>
+                  <span className="notif-subtitle">Recent activity</span>
                 </div>
                 {unreadNotifCount > 0 && (
                   <button
@@ -135,7 +149,7 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
 
               <div className="notif-dropdown-list">
                 {notifications.length === 0 ? (
-                  <div className="notif-empty">No alerts at this time</div>
+                  <div className="notif-empty">No activity yet. Upload an invoice to get started.</div>
                 ) : (
                   notifications.map((n) => (
                     <div
@@ -162,15 +176,59 @@ export const TopBar = ({ onOpenMobileSidebar }) => {
           )}
         </div>
 
-        {/* Company Profile Card */}
-        <div className="topbar-company-pill" title="Demo SME Profile">
-          <div className="company-avatar">
-            <BuildingIcon size={16} />
-          </div>
-          <div className="company-info-text">
-            <span className="company-name">{company.name}</span>
-            <span className="company-badge">{company.size}</span>
-          </div>
+        {/* Company switcher */}
+        <div className="company-switcher" ref={companyRef}>
+          <button
+            type="button"
+            className="topbar-company-pill"
+            title="Switch company"
+            aria-haspopup="listbox"
+            aria-expanded={isCompanyMenuOpen}
+            onClick={() => setIsCompanyMenuOpen((open) => !open)}
+          >
+            <div className="company-avatar">
+              <BuildingIcon size={16} />
+            </div>
+            <div className="company-info-text">
+              <span className="company-name">{company.name}</span>
+              <span className="company-badge">{company.isSample ? 'Sample company' : company.size}</span>
+            </div>
+            <span className="company-caret" aria-hidden="true">▾</span>
+          </button>
+
+          {isCompanyMenuOpen && (
+            <div className="company-menu" role="listbox">
+              <div className="company-menu-title">Your companies</div>
+              {companies.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={item.id === company.id}
+                  className={`company-menu-item ${item.id === company.id ? 'active' : ''}`}
+                  onClick={() => {
+                    switchCompany(item.id);
+                    setIsCompanyMenuOpen(false);
+                  }}
+                >
+                  <span className="company-menu-name">{item.name}</span>
+                  <span className="company-menu-meta">
+                    {item.isSample ? 'Sample company with preloaded invoices' : `${item.industry} · ${item.location}`}
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                className="company-menu-add"
+                onClick={() => {
+                  setIsCompanyMenuOpen(false);
+                  openCompanyModal('create');
+                }}
+              >
+                + Add your company
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

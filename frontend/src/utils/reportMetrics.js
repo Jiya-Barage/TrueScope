@@ -1,9 +1,15 @@
+import { prettyCategory } from './formatters.js';
+
 const VALID_SCOPES = new Set(['Scope 1', 'Scope 2', 'Scope 3']);
 
 const isValidEmission = (value) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-export function calculateInvoiceStats(invoices, categoryColors = {}) {
+const ELIGIBLE_BASES = new Set(['CO2e', 'CO2']);
+const ELIGIBLE_UNITS = new Set(['kg CO2e', 'kg CO2']);
+
+export function calculateInvoiceStats(invoices, categoryColors = {}, options = {}) {
+  const { includeSample = false } = options;
   const uploadedScopeTotals = { 'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0 };
   const demoScopeTotals = { 'Scope 1': 0, 'Scope 2': 0, 'Scope 3': 0 };
   const categoryMap = new Map();
@@ -22,6 +28,22 @@ export function calculateInvoiceStats(invoices, categoryColors = {}) {
       const emission = invoice.calculatedEmissionsKg;
       if (VALID_SCOPES.has(invoice.scope) && isValidEmission(emission)) {
         demoScopeTotals[invoice.scope] += emission;
+        if (includeSample) {
+          uploadedScopeTotals[invoice.scope] += emission;
+          const sampleCategory = prettyCategory(invoice.activityCategory);
+          if (!categoryMap.has(sampleCategory)) {
+            categoryMap.set(sampleCategory, {
+              category: sampleCategory,
+              emissions: 0,
+              scope: invoice.scope,
+              color: categoryColors[sampleCategory] || '#64748b',
+              invoiceIds: new Set(),
+            });
+          }
+          const sampleData = categoryMap.get(sampleCategory);
+          sampleData.emissions += emission;
+          sampleData.invoiceIds.add(invoice.id);
+        }
       }
       continue;
     }
@@ -46,11 +68,12 @@ export function calculateInvoiceStats(invoices, categoryColors = {}) {
       confidenceCount += 1;
     }
 
-    const emission = invoice.calculatedEmissionsKg;
+    const emission = ELIGIBLE_BASES.has(invoice.emissionsBasis) &&
+      ELIGIBLE_UNITS.has(invoice.emissionsUnit)
+      ? invoice.emissionsValue
+      : null;
     const eligible =
       invoice.calculationStatus === 'calculated' &&
-      invoice.emissionsBasis === 'CO2e' &&
-      invoice.emissionsUnit === 'kg CO2e' &&
       VALID_SCOPES.has(invoice.scope) &&
       isValidEmission(emission);
 
@@ -60,7 +83,7 @@ export function calculateInvoiceStats(invoices, categoryColors = {}) {
     }
 
     uploadedScopeTotals[invoice.scope] += emission;
-    const category = invoice.activityCategory || 'Other';
+    const category = prettyCategory(invoice.activityCategory);
     if (!categoryMap.has(category)) {
       categoryMap.set(category, {
         category,
@@ -100,7 +123,9 @@ export function calculateInvoiceStats(invoices, categoryColors = {}) {
     scope1Pct: totalEmissionsKg > 0 ? (scope1Kg / totalEmissionsKg) * 100 : 0,
     scope2Pct: totalEmissionsKg > 0 ? (scope2Kg / totalEmissionsKg) * 100 : 0,
     scope3Pct: totalEmissionsKg > 0 ? (scope3Kg / totalEmissionsKg) * 100 : 0,
-    invoiceCount: uploadedInvoiceIds.size,
+    invoiceCount: includeSample
+      ? uploadedInvoiceIds.size + demoRowCount
+      : uploadedInvoiceIds.size,
     averageConfidence: confidenceCount > 0
       ? Math.round(totalConfidence / confidenceCount)
       : 0,
@@ -115,4 +140,52 @@ export function calculateInvoiceStats(invoices, categoryColors = {}) {
     ),
     demoRowCount,
   };
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Builds a month-by-month emissions series (kg CO2e) from a company's invoices.
+ * Only calculated rows with a valid scope and emission value are included.
+ */
+export function buildMonthlyTrend(invoices) {
+  const buckets = new Map();
+  for (const invoice of invoices) {
+    if (!VALID_SCOPES.has(invoice.scope)) continue;
+    let emission = null;
+    if (invoice.isBackendUpload) {
+      if (
+        invoice.calculationStatus === 'calculated' &&
+        ELIGIBLE_BASES.has(invoice.emissionsBasis) &&
+        ELIGIBLE_UNITS.has(invoice.emissionsUnit)
+      ) {
+        emission = invoice.emissionsValue;
+      }
+    } else {
+      emission = invoice.calculatedEmissionsKg;
+    }
+    if (!isValidEmission(emission)) continue;
+    const match = /^(\d{4})-(\d{2})/.exec(invoice.date || '');
+    if (!match) continue;
+    const key = `${match[1]}-${match[2]}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        key,
+        month: `${MONTH_NAMES[Number(match[2]) - 1]} ${match[1].slice(2)}`,
+        scope1: 0,
+        scope2: 0,
+        scope3: 0,
+      });
+    }
+    const bucket = buckets.get(key);
+    if (invoice.scope === 'Scope 1') bucket.scope1 += emission;
+    if (invoice.scope === 'Scope 2') bucket.scope2 += emission;
+    if (invoice.scope === 'Scope 3') bucket.scope3 += emission;
+  }
+  return [...buckets.values()]
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map((bucket) => ({
+      ...bucket,
+      total: bucket.scope1 + bucket.scope2 + bucket.scope3,
+    }));
 }

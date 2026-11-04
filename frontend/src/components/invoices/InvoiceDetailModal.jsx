@@ -12,6 +12,7 @@ import {
   formatEmissions,
   formatCurrency,
   formatDate,
+  prettyCategory,
 } from '../../utils/formatters';
 import { useTrueScope } from '../../context/TrueScopeContext';
 
@@ -199,7 +200,7 @@ export const InvoiceDetailModal = () => {
             <div className="detail-field-card">
               <span className="field-label">Activity Category</span>
               <strong className="field-val highlight-cat">
-                {selectedInvoice.activityCategory}
+                {prettyCategory(selectedInvoice.activityCategory)}
               </strong>
             </div>
 
@@ -238,59 +239,48 @@ export const InvoiceDetailModal = () => {
                       ? 'Not available'
                       : `${selectedInvoice.emissionFactor} ${selectedInvoice.emissionFactorUnit || ''}`}
                   </strong>
-                  {selectedInvoice.emissionFactorNote && (
-                    <span className="factor-note-pill">
-                      {selectedInvoice.emissionFactorNote}
-                    </span>
-                  )}
-                  {selectedInvoice.emissionCalculation && (
+                                    {selectedInvoice.emissionCalculation && (
                     <span className="factor-note-pill">
                       {selectedInvoice.emissionFactorVerified
-                        ? 'Verified'
-                        : 'Unverified — review required'}
+                        ? 'Verified factor'
+                        : 'Indicative factor, pending verification'}
                     </span>
                   )}
-                  {selectedInvoice.emissionFactorGeography && (
+                  <details style={{ marginTop: '8px' }}>
+                    <summary style={{ cursor: 'pointer', fontSize: '0.85rem' }}>
+                      Show source details
+                    </summary>
                     <span className="factor-note-pill">
-                      Geography: {selectedInvoice.emissionFactorGeography}
+                      Geography:{' '}
+                      {selectedInvoice.emissionFactorGeography ||
+                        (selectedInvoice.emissionFactorLibraryDefaultGeography
+                          ? `not confirmed (library default: ${selectedInvoice.emissionFactorLibraryDefaultGeography})`
+                          : 'not confirmed')}
                     </span>
-                  )}
-                  {!selectedInvoice.emissionFactorGeography && (
-                    <span className="factor-note-pill">
-                      Geography not established
-                      {selectedInvoice.emissionFactorLibraryDefaultGeography
-                        ? ` (library default: ${selectedInvoice.emissionFactorLibraryDefaultGeography})`
-                        : ''}
-                    </span>
-                  )}
-                  {selectedInvoice.emissionFactorSource && (
-                    <span className="factor-note-pill">
-                      Source: {selectedInvoice.emissionFactorSource}
-                      {selectedInvoice.emissionFactorSourceYear
-                        ? ` (${selectedInvoice.emissionFactorSourceYear})`
-                        : ''}
-                    </span>
-                  )}
-                  {selectedInvoice.emissionFactorProvenance && (
+                    {selectedInvoice.emissionFactorSource && (
+                      <span className="factor-note-pill">
+                        Source: {selectedInvoice.emissionFactorSource}
+                        {selectedInvoice.emissionFactorSourceYear
+                          ? ` (${selectedInvoice.emissionFactorSourceYear})`
+                          : ''}
+                      </span>
+                    )}
                     <span className="factor-note-pill">
                       Activity boundary:{' '}
-                      {selectedInvoice.emissionFactorProvenance.activity_boundary ||
+                      {selectedInvoice.emissionFactorProvenance?.activity_boundary ||
                         'Not documented'}
                     </span>
-                  )}
-                  {selectedInvoice.emissionFactorProvenance && (
                     <span className="factor-note-pill">
                       Method:{' '}
-                      {selectedInvoice.emissionFactorProvenance.method ||
+                      {selectedInvoice.emissionFactorProvenance?.method ||
                         'Not documented'}
                     </span>
-                  )}
-                  {selectedInvoice.emissionFactorProvenance?.rationale && (
-                    <span className="factor-note-pill">
-                      Provenance limitation:{' '}
-                      {selectedInvoice.emissionFactorProvenance.rationale}
-                    </span>
-                  )}
+                    {selectedInvoice.emissionFactorProvenance?.rationale && (
+                      <span className="factor-note-pill">
+                        Note: {selectedInvoice.emissionFactorProvenance.rationale}
+                      </span>
+                    )}
+                  </details>
                 </div>
               ) : isEditing ? (
                 <div className="inline-edit-group">
@@ -309,7 +299,7 @@ export const InvoiceDetailModal = () => {
                     {selectedInvoice.emissionFactor} {selectedInvoice.emissionFactorUnit}
                   </strong>
                   <span className="factor-note-pill">
-                    {selectedInvoice.emissionFactorNote || 'Demo Mock Factor - Unverified'}
+                    {selectedInvoice.emissionFactorNote || 'Indicative emission factor'}
                   </span>
                 </div>
               )}
@@ -416,7 +406,7 @@ export const InvoiceDetailModal = () => {
               </>
             ) : (
               <>
-                <strong>Demo Calculation:</strong> All greenhouse gas calculations are based on mock emission factors. In production, factors map to certified DEFRA, EPA GHG Hub, or regional grid APIs with full audit logs.
+                <strong>Sample invoice:</strong> This record belongs to the sample company and uses reference emission factors. Upload your own invoice to see the full extraction and factor trail.
               </>
             )}
           </span>

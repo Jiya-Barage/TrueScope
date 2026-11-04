@@ -11,7 +11,7 @@ import {
 import { useTrueScope } from '../../context/TrueScopeContext';
 
 export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
-  const { activeScreen, setActiveScreen, openUploadModal, stats } = useTrueScope();
+  const { activeScreen, setActiveScreen, openUploadModal, stats, company } = useTrueScope();
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: DashboardIcon },
@@ -59,12 +59,6 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </button>
         </div>
 
-        {/* Demo Mode Notice */}
-        <div className="sidebar-demo-notice">
-          <span className="pulse-dot" />
-          <span className="demo-notice-text">Demo Prototype Mode</span>
-        </div>
-
         {/* Navigation Items */}
         <nav className="sidebar-nav">
           <div className="nav-section-title">Navigation</div>
@@ -95,7 +89,7 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </div>
           <h4 className="cta-title">Upload SME Invoice</h4>
           <p className="cta-description">
-            Simulate OCR extraction and GHG activity mapping.
+            Drop in a PDF or image. We extract the activity data and estimate emissions.
           </p>
           <button
             type="button"
@@ -112,9 +106,24 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
         {/* Bottom Sustainability Pledge Footer */}
         <div className="sidebar-footer">
           <div className="pledge-card">
-            <span className="pledge-label">SME Climate Target</span>
-            <strong className="pledge-target">Net Zero by 2035</strong>
-            <span className="pledge-status">Tracked against baseline</span>
+            <span className="pledge-label">Climate target</span>
+            {company.netZeroTarget ? (
+              <>
+                <strong className="pledge-target">{company.netZeroTarget}</strong>
+                <span className="pledge-status">Baseline year {company.baselineYear}</span>
+              </>
+            ) : (
+              <>
+                <strong className="pledge-target">No target set</strong>
+                <button
+                  type="button"
+                  className="pledge-status pledge-link"
+                  onClick={() => handleNavClick('settings')}
+                >
+                  Set a target in Settings
+                </button>
+              </>
+            )}
           </div>
         </div>
       </aside>

@@ -71,7 +71,7 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
       escapeCSV(inv.unit),
       escapeCSV(inv.emissionFactor),
       escapeCSV(inv.emissionFactorUnit),
-      escapeCSV(inv.emissionFactorNote || (isUploaded ? null : 'Demo Mock Factor - Unverified')),
+      escapeCSV(inv.emissionFactorNote || (isUploaded ? null : 'Unverified emission factor')),
       escapeCSV(inv.emissionFactorSource),
       escapeCSV(inv.emissionFactorProvenance?.source_title),
       escapeCSV(inv.emissionFactorProvenance?.source_publisher),
@@ -91,7 +91,7 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
       escapeCSV(
         isUploaded
           ? inv.calculationReason
-          : 'Predefined demo/mock value; not an engine calculation.',
+          : 'Predefined sample value; not an engine calculation.',
       ),
       escapeCSV(inv.confidence),
       escapeCSV(provenance),
@@ -106,7 +106,7 @@ export const generateEmissionsCSV = (invoices, companyInfo = {}) => {
     `# Organization: ${companyInfo.name || 'Apex Logistics & Supplies SME'}`,
     `# Reporting Period: ${companyInfo.reportingPeriod || '2024 YTD'}`,
     `# Generated At: ${reportDate}`,
-    `# NOTICE: This export includes all available rows, not a filtered reporting period. Uploaded rows retain the backend emissions basis, unit, factor geography, verification state, and calculation status. Demo/mock rows contain predefined values and are identified in Data Provenance.`,
+    `# NOTICE: This export includes all available rows, not a filtered reporting period. Uploaded rows retain the backend emissions basis, unit, factor geography, verification state, and calculation status. Sample rows contain predefined values and are identified in Data Provenance.`,
     `#`,
   ].map((line) =>
     [escapeCSV(line), ...headers.slice(1).map(() => '""')].join(','),
