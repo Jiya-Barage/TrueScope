@@ -1,5 +1,12 @@
 # Emission engine coverage and trust
 
+## Verification status
+
+The audit records inspection of official IPCC 2006 guidance; the CEA database URL returned HTTP 404 and the NITI Aayog PDF HTTP 403, while the accessible UK Government collection covers UK factors, not India-specific values.
+All eight factors remain indicative demonstration values pending verification: electricity has an inaccessible factor source and unresolved reference year; the other seven have no factor-specific source or reference year.
+Factor-specific geography, activity boundary, methodology, and matching evidence remain unestablished; fuel, transport, waste/material, and water-treatment details are also missing where applicable.
+Verification requires an accessible authoritative factor source and supporting excerpt establishing the exact value, units, reference year, geography, activity boundary, and method; none is currently authoritative.
+
 ## Factor inventory and evidence audit
 
 Audit performed on 25 October 2026. The figures below are the values currently
